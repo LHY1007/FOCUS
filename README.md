@@ -26,10 +26,17 @@ You can use the below commands to train the model:
 
 ### 4. Test
 
-You can download the provided [pretrained model](xxx) Use the below command to test the model.
+You can download the provided [pretrained model](https://www.dropbox.com/scl/fo/gte7fbz2y14syitka3mb0/AOhsVHx4Rdlk9BU2oJRySv4?rlkey=aytpdtg1ae05jf8i139a2e15c&st=5qi9943t&dl=0) Use the below command to test the model.
 ```
     python ./test.py
 ```
+
+### 5. Other doc
+You can find other model we have used here:
+[BioBERT](https://github.com/dmis-lab/biobert)
+[scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial)
+[Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath)
+
 
 
 
