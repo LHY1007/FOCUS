@@ -33,8 +33,11 @@ You can download the provided [pretrained model](https://www.dropbox.com/scl/fo/
 
 ### 5. Other doc
 You can find other model we have used here:
+
 [BioBERT](https://github.com/dmis-lab/biobert)
+
 [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial)
+
 [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath)
 
 
