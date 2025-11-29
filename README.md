@@ -10,7 +10,7 @@
 - Python >= 3.10
 - Use the following command to create your own environment.
 ```
-conda env create -n <name> -f environment.yml
+conda env create -f DDPM310_full.yaml
 ```
 
 ### 2. Prepare data
