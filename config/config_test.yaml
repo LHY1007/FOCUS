@@ -1,0 +1,38 @@
+attention_resolutions: 32,16,8
+base_samples: ''
+batch_size: 1
+clip_denoised: True
+data_dir: ''
+dropout: 0.0
+
+all_gene : 5
+gene_num : 5
+SR_times: 10
+dataset_use : 'All'
+epoch : 3000
+data_root : '/home/cbtil4/ST/datasets/demo/'
+log_dir : 'logs/'
+pre_model_dir  : '/model'
+diffusion_steps: 1000
+sampling_method: guided # guided
+
+num_channels: 128
+num_res_blocks: 1
+# model_path: /home/hanyu/JYX/logs_new/x10_Xenium_g10_outRelu_100_t2_0109-1050/model012000.pt
+
+learn_sigma: true
+noise_schedule: linear
+num_head_channels: 48
+num_heads: 4
+num_heads_upsample: -1
+#num_samples: 50000
+predict_xstart: false
+resblock_updown: true
+rescale_learned_sigmas: false
+rescale_timesteps: false
+timestep_respacing: '400'
+use_checkpoint: false
+
+use_fp16: false
+use_kl: false
+use_scale_shift_norm: true

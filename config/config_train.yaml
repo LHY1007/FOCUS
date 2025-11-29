@@ -1,0 +1,43 @@
+attention_resolutions: 32,16,8
+data_dir: ''
+diffusion_steps: 1000
+dropout: 0.0
+ema_rate: '0.9999'
+fp16_scale_growth: 0.001
+save_interval: 2000
+
+all_gene : 5
+gene_num : 5
+batch_size: 8
+SR_times: 10
+dataset_use : 'All'
+epoch : 3000
+data_root : '/home/cbtil4/ST/datasets/demo/'
+n: 1
+log_dir : 'logs/'
+pre_model_dir  : '/model'
+
+num_channels: 128
+num_res_blocks: 1
+
+learn_sigma: true
+log_interval: 100
+lr: 0.0001
+lr_anneal_steps: 0
+microbatch: -1
+noise_schedule: linear
+num_head_channels: 48
+num_heads: 2
+num_heads_upsample: -1
+resblock_updown: true
+use_scale_shift_norm: true
+rescale_learned_sigmas: false
+rescale_timesteps: false
+resume_checkpoint: ''
+schedule_sampler: uniform
+timestep_respacing: ''
+use_checkpoint: false
+use_fp16: false
+use_kl: false
+predict_xstart: false
+weight_decay: 0.00001
