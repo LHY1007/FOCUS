@@ -1,12 +1,4 @@
 
-<h1 align='center' style="text-align:center; font-weight:bold; font-size:2.0em;letter-spacing:2.0px;">
-            <img src="doc/icon.png" alt="Icon" style="width:40px; vertical-align:middle; margin-right:10px;">      FOCUS
-
-<h1 align='center' style="text-align:center; font-weight:bold; font-size:2.0em;letter-spacing:2.0px;">
-              Towards real-world molecular pathology diagnosis of cancers with cross-modal AI</h1>    
-              
-
-
 ## Highlights of FOCUS
 
 - **FOCUS** (A Foundational Generative Model for Cross-platform Unified Enhancement of Spatial Transcriptomics) 
