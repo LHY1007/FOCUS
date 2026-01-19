@@ -191,7 +191,7 @@ FOCUS is evaluated using:
 If you use FOCUS in your research, please cite:
 
 ```bibtex
-@article {Wang2025.12.23.696267,
+@article {Wang2025Focus,
 	author = {Wang, Xiaofei and Liu, Hanyu and Que, Ningfeng and Tao, Chenyang and Jiang, Yu and Jiang, Yixuan and Zhu, Pinan and Zhu, Junze and Li, Xiaoyang and Price, Stephen and Xu, Jianguo and Xi, Jianzhong and Wang, Xinjie and Li, Chao},
 	title = {A Foundational Generative Model for Cross-platform Unified Enhancement of Spatial Transcriptomics},
 	elocation-id = {2025.12.23.696267},
