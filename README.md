@@ -8,29 +8,6 @@
 
 Spatial transcriptomics (ST) enables in situ mRNA profiling but remains limited by spatial resolution, sensitivity, histological alignment, and mis-profiling in complex tissues. Most enhancement methods target a single challenge using an auxiliary modality, e.g., super-resolution using hematoxylin and eosin (H&E) images and sensitivity enhancement with single-cell RNA-seq (scRNA-seq). However, most ignore integration across modalities and interdependence across challenges, yielding biologically inconsistent reconstructions. Here we introduce FOCUS, a foundational generative model for cross-platform unified ST enhancement, conditioned on H&E images, scRNA-seq references, and spatial co-expression priors. FOCUS uses a modular design for multimodal integration, and a cross-challenge coordination strategy to target co-occurring defects, enabling joint challenge optimization. FOCUS was trained and benchmarked on >1.7 million H&E-ST pairs and >5.8 million single-cell profiles, demonstrating state-of-the-art performance on both isolated and coupled challenges across ten platforms. We utilized FOCUS in elucidating the niche characterization in papillary craniopharyngioma and uncovering spatial heterogeneity in primary and metastatic head and neck squamous cell carcinoma.
 
-### Key Features
-
-- **Multi-Modal Integration**: Seamlessly combines ST data, H&E images, scRNA-seq references, and gene relationship networks
-- **10× Super-Resolution**: Enhances spatial resolution from spot-level to near single-cell resolution
-- **Cross-Platform Compatibility**: Supports multiple ST platforms including Xenium, Visium, and others
-- **Biologically Informed**: Incorporates gene co-expression networks and scGPT embeddings for biologically meaningful enhancement
-- **Advanced Architecture**: Features include:
-  - Optimal transport-based alignment between scRNA-seq and ST data
-  - H&E-guided spatial attention mechanisms
-  - Gene memory networks for co-expression modeling
-  - Lightweight module coordinator for multi-scale feature fusion
-
-## Architecture
-
-FOCUS employs a sophisticated U-Net-based diffusion model with several innovative components:
-
-1. **Multi-Modal Encoders**: Separate pathways for ST data, H&E images (multiple scales), and auxiliary features
-2. **OT Alignment Module**: Optimal transport for sc→ST feature alignment
-3. **H&E Guided Attention**: Multi-scale gradient-based saliency for tissue structure awareness
-4. **Gene Memory Network**: Leverages gene co-expression matrices for biological consistency
-5. **Constrained Refinement**: Cell-level correlation constraints using cell segmentation masks
-6. **Lightweight Module Coordinator**: Token-based negotiation between feature streams
-
 ## Installation
 
 ### Environment Setup
