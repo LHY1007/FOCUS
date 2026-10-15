@@ -8,11 +8,11 @@ process over the test split and reports the per-gene-group metrics.
 
 import os, re, glob, gc, yaml, torch
 import numpy as np
+from pathlib import Path
 import torch.nn.functional as F
 from torch.utils.data import DataLoader
 from mpi4py import MPI
 from guided_diffusion import dist_util, logger
-from guided_diffusion.load_dataset import load_data
 from guided_diffusion.script_util import sr_create_model_and_diffusion, add_dict_to_argparser
 from skimage.metrics import structural_similarity as ssim
 import matplotlib.pyplot as plt
@@ -22,25 +22,23 @@ comm = MPI.COMM_WORLD
 rank = comm.Get_rank()
 gpu_ids = [0]
 torch.cuda.set_device(gpu_ids[rank])
+# Match train.py: initialize the CUDA/runtime stack before importing Scanpy.
+from guided_diffusion.load_dataset import load_data
 def create_argparser():
     import argparse
     parser = argparse.ArgumentParser()
-    parser.add_argument("--config", help="Path to YAML configuration file")
-    with open("./code/config/config_test.yaml", "r") as file:
+    parser.add_argument("--config", default=str(Path(__file__).parent / "config/config_test.yaml"), help="Path to YAML configuration file")
+    config_args, _ = parser.parse_known_args()
+    with open(config_args.config, "r") as file:
         config = yaml.safe_load(file)
+    config.setdefault("output_dir", "TEST_Result-demo")
+    config.setdefault("checkpoint_root", "logs")
+    config.setdefault("noise_sigma", 1.0)
     add_dict_to_argparser(parser, config)
     return parser
 
 args = create_argparser().parse_args()
-args.all_gene = 5
-args.gene_num = 5
-args.batch_size = 1
-args.SR_times = 10
-args.dataset_use = "All"
-args.data_root = "/home/cbtil4/ST/datasets/demo/"
-args.noise_sigma = 1.0
-Output = "TEST_Result-demo"
-global_num = "_demo"
+Output = args.output_dir
 
 # ========== 辅助函数 ==========
 def inv_l1_log(sr_norm_patch, patch_scale):
@@ -75,12 +73,11 @@ def save_sample_images(gt, pred, idx, outdir):
 
 
 def main(Output):
-    pre_model_dir  = '/model'
-    model_dirs = sorted(glob.glob(os.path.join(f"./logs{global_num}", args.dataset_use,"10X", "G*")))
+    pre_model_dir = args.pre_model_dir
+    model_dirs = sorted(glob.glob(os.path.join(args.checkpoint_root, args.dataset_use, f"{args.SR_times}X", "G*")))
 
     if len(model_dirs) == 0:
-        print("⚠️ unable to find model directories.")
-        return
+        raise FileNotFoundError(f"No checkpoint directories under {args.checkpoint_root}")
 
     for model_dir in model_dirs:
         dir_name = os.path.basename(model_dir)
@@ -168,12 +165,15 @@ def main(Output):
             with torch.no_grad():
                 sample, scale_pred = sample_fn(
                     model,
-                    (args.batch_size, args.gene_num, 256, 256),
+                    (SR_ST.shape[0], args.gene_num, 256, 256),
                     clip_denoised=getattr(args, "clip_denoised", True),
                     model_kwargs=model_kwargs,
                 )
 
             pred = sample.permute(0, 2, 3, 1).cpu().numpy()[0]
+            if not np.isfinite(pred).all():
+                raise RuntimeError("Non-finite generated expression values")
+            np.save(os.path.join(results_dir, f"prediction_{j}.npy"), pred)
 
 
 

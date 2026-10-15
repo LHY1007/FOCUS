@@ -106,6 +106,83 @@ The preprocessing scripts in `data_preprocessing/` need packages that are **not*
 `spatialdata-io` and `pyvips` for Visium HD.
 See [`data_preprocessing/README.md`](data_preprocessing/README.md#2-requirements).
 
+### Tested system and hardware
+
+The small execution demo below was tested on **Ubuntu 20.04.6 LTS**, Python **3.11.15**,
+PyTorch **2.12.0+cu126**, torchvision **0.27.0+cu126**, NVIDIA driver **570.133.20**, and one
+**NVIDIA RTX 6000 Ada Generation (48 GiB)** on CB4. The supplied `FOCUS.yaml` describes a
+different environment (Python 3.10.19 / PyTorch 2.9.0); a clean installation of that exact
+environment has not been validated in this deployment.
+
+The other direct runtime dependencies tested were NumPy 2.4.4, SciPy 1.17.1, Scanpy 1.11.5,
+AnnData 0.12.16, Transformers 5.9.0, POT 0.9.7.post1, blobfile 3.3.0,
+mpi4py-mpich 3.1.5, scikit-image 0.26.0, PyYAML 6.0.3, pandas 2.3.3,
+matplotlib 3.10.9, h5py 3.16.0 and Pillow 12.2.0.
+
+The current model uses CUDA directly and requires an NVIDIA GPU; CPU-only execution and
+other operating systems have not been tested. No minimum GPU-memory requirement has been
+established. Installation time on a normal desktop computer has **not been measured**.
+The CB4 deployment reused a pre-existing scientific Python environment, so its setup time
+would not be a clean-install estimate.
+
+### Small real-data execution demo
+
+[`demo/data.tar.gz`](demo/data.tar.gz) contains two real Xenium mouse-pup ST/H&E patches,
+50 matched genes and 100 real WMB midbrain scRNA-seq reference profiles. The first five
+genes are used for generation. Source paths, gene order, preprocessing and limitations are
+recorded in [`demo/provenance.json`](demo/provenance.json); the preparation code is
+[`demo/prepare_mouse_demo.py`](demo/prepare_mouse_demo.py).
+
+This demo checks **execution**, not the paper's enhancement accuracy: the adult brain reference
+is not a matched mouse-pup reference, the cell masks are threshold-component proxies,
+scGPT/GigaPath inputs are zero placeholders, and the coexpression prior comes from one patch.
+The legacy class folder is named `Mouse_healthy_brain`; the mouse-pup patches have not been
+independently annotated as brain. Training and inference use the same two patches.
+Replace these inputs with the matched, pretrained features and references for a scientific run.
+Dataset source terms apply separately from the MIT code license.
+
+From the repository root, after installing dependencies:
+
+```bash
+mkdir -p demo/data
+tar -xzf demo/data.tar.gz -C demo/data --strip-components=1
+```
+
+Download the metadata BERT model once (approximately 440 MB), then use the supplied demo configs:
+
+```bash
+python - <<'PY'
+from transformers import AutoTokenizer, AutoModel
+name = 'google-bert/bert-base-uncased'
+AutoTokenizer.from_pretrained(name).save_pretrained('models/bert')
+AutoModel.from_pretrained(name).save_pretrained('models/bert')
+PY
+CUDA_VISIBLE_DEVICES=0 FOCUS_NUM_WORKERS=0 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 python train.py --config demo/train.yaml
+CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MPLBACKEND=Agg python sample.py --config demo/test.yaml
+```
+
+Expected outputs are `logs_demo_two/Mouse_healthy_brain/10X/G*/model000001.pt` and
+`TEST_Result-demo/Mouse_healthy_brain/G0-5/`, containing two `prediction_*.npy` arrays of
+shape `(256, 256, 5)`, 20 ground-truth/prediction PNGs and a two-row `metrics.csv`.
+The arrays retain raw diffusion output; PNGs and metrics use per-gene min–max-scaled predictions.
+These diagnostic metrics are not held-out performance estimates.
+
+On the tested CB4 system the two optimizer updates took about **4 seconds** inside the training
+loop; inference with `timestep_respacing: '4'` took **18.26 seconds**, including process startup,
+data/model loading and writing outputs. These are different timing boundaries. The default
+scientific inference config uses 400 reverse steps; the demo uses 4. Runtime on a normal desktop
+computer has **not been measured**. Results and timing can vary with random initialization and load.
+
+### Generated channels
+
+`gene_num` controls the number of generated **gene-expression channels**. The supplied configs
+and the tested demo use **5**, producing `(batch, 5, 256, 256)` tensors. The U-Net output head has
+10 channels: five noise predictions plus five learned-variance predictions. The diffusion sampler
+returns five expression channels. H&E images have **3 RGB input channels**; their channel count
+does not specify the generation channel count. Each gene's expression map is a single scalar image,
+even when its preview is saved with a colour map. The tested checkpoint generates neither 1 nor 3
+expression channels. Changing `gene_num` requires a checkpoint trained with the corresponding shape.
+
 ## Data Preparation
 
 ### Directory Structure
@@ -145,8 +222,8 @@ data_root/
 | `5120_to256.npy` | `(256, 256, 3)` uint8 | H&E patch at 0.5 µm/px, downsampled from the 5120 px tile |
 | `320_to16.npy` | `(256, 16, 16, 3)` uint8 | Multi-scale H&E sub-patches, sorted by complexity |
 | `cell_mask.npy` | `(256, 256, M)` | Cell segmentation masks |
-| `pre_he.npy` | `(3, 256, 256)` | Pre-extracted H&E features |
-| `scgpt_data/` | `{s}to{e}.npy` per 5-gene group | scGPT embeddings per gene group |
+| `pre_he.npy` | `(3, 512)` | H&E features expected by `HEMatchingLayer` |
+| `scgpt_data/` | `(512, 26, 26)` for the active group | scGPT features expected by `STMatchingLayer`; default filename `1to5.npy` |
 | `{scRNA_data}.h5ad` | AnnData | Single-cell reference, one `.h5ad` per tissue type |
 | `coexpression_matrix.npy` | `(K, K)` | Spatial gene–gene co-expression prior for the tissue |
 | `gene_order.npy` | `(G,)` int | Column indices into the platform's full gene panel |
@@ -303,6 +380,11 @@ python train.py
   not end in `000`), so the script can be re-run to fill in missing groups;
 - saves checkpoints every `save_interval` steps and logs loss curves into the run directory.
 
+Use a training batch and microbatch size of at least **2**: `ScalePredictionHead` contains
+`BatchNorm1d` after global pooling, which cannot train on a single example. Inference uses batch 1.
+The current loop defines `total_iterations = int(99 * epoch / batch_size) + 1` and runs steps
+`0..total_iterations` inclusive; `epoch: 0` therefore performs two optimizer updates in the demo.
+
 Note that the per-group gene slicing is commented out in `train_part.py` (see
 [Registering a New Tissue Type](#registering-a-new-tissue-type)), so all groups in one run train on the
 same first `gene_num` genes unless you restore it.
@@ -330,15 +412,16 @@ Then run:
 python sample.py
 ```
 
-`sample.py` discovers checkpoints under `./logs{global_num}/{dataset_use}/10X/G*` and evaluates the
-newest step in each, so its `dataset_use`, `data_root`, `gene_num`, `SR_times`, `global_num` and
-`Output` are set **in the script** (lines 27–35) and override the YAML. Note that the checkpoint glob
-hard-codes `10X` rather than `{SR_times}X`; adjust it if you trained at a different `SR_times`.
+`sample.py` discovers checkpoints under `{checkpoint_root}/{dataset_use}/{SR_times}X/G*` and
+evaluates the newest step in each. Set `checkpoint_root` (default `logs`) and `output_dir`
+(default `TEST_Result-demo`) in the YAML. Both entry points accept `--config path/to/config.yaml`
+and command-line overrides such as `--data_root /path/to/data`.
 
 Outputs are written to `TEST_Result-demo/{dataset_use}/G{start}-{end}/`:
 
 - `samples/{idx}_{gene}gt.png` and `samples/{idx}_{gene}pred.png` — ground truth and prediction per gene
 - `metrics.csv` — `SampleID, RMSE, SSIM, CC` for every patch
+- `prediction_{idx}.npy` — generated floating-point expression maps, `(256, 256, gene_num)`
 
 ### Pre-trained Models
 
@@ -372,15 +455,16 @@ FOCUS is evaluated using:
    - Confirm the tissue name is listed in `_ALL_CLASSES` in `load_dataset.py`
    - `HR_ST` and `spot_ST` must have the same gene dimension, since both are indexed with `gene_order`
 
-3. **`FileNotFoundError: ./code/config/config_train.yaml`**
-   - The config path is hard-coded; clone the repository into a directory named `code` or edit the path
-     in `train.py` / `sample.py`
+3. **Configuration file not found**
+   - The default config is resolved relative to the entry-point file. Use `--config /path/to/config.yaml`
+     for another configuration; data and output paths are relative to the working directory.
 
 4. **No patches loaded**
    - The dataset requires **all** of `HR_ST_256.npz`, `spot_ST.npz`, `5120_to256.npy`, `320_to16.npy`
      and `cell_mask.npy` for a patch; a patch missing any of them is skipped with a warning
-   - `pre_he.npy` and `scgpt_data/` are optional but silently fall back to zeros, which will degrade
-     results — check the warnings printed while loading
+   - Supply `pre_he.npy` and `scgpt_data/` as well: the current model requires numeric tensors for both.
+     The execution demo provides explicitly labelled zero placeholders, which are unsuitable for
+     assessing enhancement accuracy.
    - Tiles rejected by the H&E pass can still have ST grids written for them (see
      [`data_preprocessing/README.md`](data_preprocessing/README.md#55-run-order)); those tiles have no
      `WSI/` patch and are skipped here

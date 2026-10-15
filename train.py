@@ -1,6 +1,6 @@
 """Train FOCUS.
 
-Reads `./code/config/config_train.yaml`, builds the data loader, the
+Reads `config/config_train.yaml` beside this script (or `--config`), builds the data loader, the
 conditional U-Net and the diffusion process, then hands control to
 `guided_diffusion.train_util.TrainLoop`.
 
@@ -16,6 +16,7 @@ os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
 import argparse
 import yaml
+from pathlib import Path
 import argparse
 from guided_diffusion import dist_util
 from guided_diffusion.script_util import (
@@ -37,11 +38,11 @@ def main():
 
 def create_argparser():
     parser = argparse.ArgumentParser()
-    parser.add_argument("--./code/config/config_train.yaml", help="Path to YAML configuration file")
-    args = parser.parse_args()
+    parser.add_argument("--config", default=str(Path(__file__).parent / "config/config_train.yaml"), help="Path to YAML configuration file")
+    args, _ = parser.parse_known_args()
 
     # Load the configuration from the YAML file
-    with open('./code/config/config_train.yaml', "r") as file:
+    with open(args.config, "r") as file:
         config = yaml.safe_load(file)
 
     # Add the configuration values to the argument parser

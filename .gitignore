@@ -7,6 +7,8 @@ logs*/
 TEST_Result*/
 checkpoint*.pt
 *.ckpt
+models/
+demo/data/
 
 # editors and OS
 .idea/

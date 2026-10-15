@@ -72,7 +72,12 @@ class Data_all(Dataset):
         self.data_root = data_root
         self.status = status
         self.gene_num = int(gene_num) if gene_num is not None else 20
-        self.selected_classes = self._ALL_CLASSES
+        if dataset_use == 'All':
+            self.selected_classes = [c for c in self._ALL_CLASSES if os.path.isdir(os.path.join(data_root, c))]
+        elif dataset_use in self._ALL_CLASSES:
+            self.selected_classes = [dataset_use]
+        else:
+            raise ValueError(f"Unknown tissue class: {dataset_use}")
 
         # ---- 扫描所有类下的 patch 信息，记录所属类
         self.selected_patches = []
@@ -214,7 +219,7 @@ class Data_all(Dataset):
                     print(f"⚠️ Missing gene files for {(cls_name, sub)}: {order_path} | {name_path}")
                     continue
                 order = np.load(order_path)[:self.gene_num].astype(int)
-                names = np.loadtxt(name_path, dtype=str)[:self.gene_num]
+                names = np.loadtxt(name_path, dtype=str, ndmin=1)[:self.gene_num]
                 info[(cls_name, sub)] = {"idxN": order, "namesN": names.tolist()}
         return info
 
@@ -310,7 +315,7 @@ class Data_all(Dataset):
         self.prehe_list = prehe_list
 
         if len(self.SR_ST_all) == 0:
-            print("⚠️ No valid patches loaded. Please check directory structure and files.")
+            raise ValueError("No valid patches loaded. Check data_root, tissue class and required files.")
 
     # ===================================================== #
     # 归一化（保持）
@@ -331,13 +336,18 @@ class Data_all(Dataset):
     # BERT 元数据（保持）
     # ===================================================== #
     def _load_bert_model(self, pre_model_dir):
-        self.tokenizer = AutoTokenizer.from_pretrained(f'./{pre_model_dir}/bert', trust_remote_code=True)
-        self.model = AutoModel.from_pretrained(f'./{pre_model_dir}/bert', local_files_only=True, trust_remote_code=True)
+        bert_dir = os.path.join(pre_model_dir, 'bert')
+        self.tokenizer = AutoTokenizer.from_pretrained(bert_dir, local_files_only=True)
+        self.model = AutoModel.from_pretrained(bert_dir, local_files_only=True)
         self.model.eval()
 
     def _embed_metadata(self):
         prompt = ("Provide spatial transcriptomics data from the Xenium5k platform "
                   "for mouse species, with a cancer condition, and brain tissue type.")
+        prompt_path = os.path.join(self.data_root, 'metadata_prompt.txt')
+        if os.path.isfile(prompt_path):
+            with open(prompt_path, encoding='utf-8') as f:
+                prompt = f.read().strip()
         with torch.no_grad():
             inputs = self.tokenizer(prompt, return_tensors='pt')
             outputs = self.model(**inputs)
@@ -416,14 +426,14 @@ def load_scgpt_embedding(scgpt_dir, gene_names):
             # 缺失则补零
             chunks.append(np.zeros_like(chunks[-1]) if chunks else None)
 
-    # 拼接为 (G, H, W)
+    # The active five-gene group's STMatchingLayer input is (512, 26, 26).
     scgpt_full = np.concatenate(chunks, axis=0)
     return scgpt_full.astype(np.float32)
 
 
 def load_pre_he(prehe_path):
     """
-    pre_he 是 [3,256,256] 的 embedding
+    pre_he is a [3,512] embedding consumed by HEMatchingLayer.
     不存在就返回 None
     """
     if os.path.exists(prehe_path):

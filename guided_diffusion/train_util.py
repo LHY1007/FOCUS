@@ -172,6 +172,7 @@ class TrainLoop:
             deterministic: 是否使用确定性加载 (不shuffle)
         """
         num_workers = min(32, os.cpu_count() // 4)
+        num_workers = int(os.environ.get("FOCUS_NUM_WORKERS", num_workers))
         
         loader = DataLoader(
             self.data,
@@ -180,8 +181,8 @@ class TrainLoop:
             num_workers=num_workers,
             drop_last=True,
             pin_memory=True,
-            prefetch_factor=8,
-            persistent_workers=True,
+            prefetch_factor=8 if num_workers else None,
+            persistent_workers=num_workers > 0,
         )
         
         # 无限循环迭代器
@@ -426,6 +427,8 @@ class TrainLoop:
             
             # 加权平均损失
             loss = (losses["loss"] * weights).mean()
+            if not torch.isfinite(loss):
+                raise RuntimeError(f"Non-finite training loss: {loss.detach().item()}")
             
             # 记录损失
             log_loss_dict(
