@@ -87,7 +87,9 @@ data_root/
 
 ### Data Preprocessing
 
-Data should be log-normalized with gene-wise scaling. For details on data preparation pipelines, please refer to:
+The preprocessing code that turns raw Visium / VisiumHD / Xenium output into the layout above — H&E tile extraction, transcript binning onto the high- and low-resolution grids, and gene panel construction — is in [`data_preprocessing/`](data_preprocessing/). See [`data_preprocessing/README.md`](data_preprocessing/README.md) for the per-platform walkthrough.
+
+Processed data should be log-normalized with gene-wise scaling. For the embedding and feature-extraction steps, please refer to:
 
 - [BioBERT](https://github.com/dmis-lab/biobert) - Gene name embeddings
 - [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) - Gene expression embeddings
