@@ -27,8 +27,8 @@ import torch
 import yaml
 from guided_diffusion.script_util import sr_create_model_and_diffusion
 
-MODEL_URL = 'https://github.com/LHY1007/FOCUS/releases/download/demo-1gene-v1/focus-demo-1gene.pt'
-MODEL_SHA256 = '6313dc713743c6d5c0e3f833b37473ae4d6f0674d6d21eaa5d38d0feb385a0c4'
+MODEL_URL = 'https://github.com/LHY1007/FOCUS/releases/download/ttn-demo-v2/focus-ttn.pt'
+MODEL_SHA256 = '2b656acde5e7455efa4356285bfeab459ac7e70890bfeeb6ca7cc853de88a21c'
 KEYS = ('low_res', 'WSI_320', 'gene_class', 'Gene_index_map',
         'metadata_feature', 'scale_gt', 'co_expression', 'WSI_mask', 'sc', 'scgpt', 'pre_he')
 
@@ -47,7 +47,7 @@ def checkpoint_path(override):
         if not path.is_file():
             raise FileNotFoundError(path)
         return path
-    path = ROOT/'models'/'focus-demo-1gene.pt'
+    path = ROOT/'models'/'focus-ttn.pt'
     path.parent.mkdir(parents=True, exist_ok=True)
     if not path.exists():
         print('Downloading the one-gene demo checkpoint (about 70 MB)...', flush=True)
@@ -83,7 +83,8 @@ def main():
     np.random.seed(0)
     with (ROOT/'config/config_test.yaml').open(encoding='utf-8') as f:
         config = yaml.safe_load(f)
-    config.update(gene_num=1, all_gene=1, batch_size=1, timestep_respacing='4')
+    config.update(gene_num=1, all_gene=1, batch_size=1,
+                  predict_xstart=True, timestep_respacing='16')
     model, diffusion = sr_create_model_and_diffusion(SimpleNamespace(**config))
     state = torch.load(checkpoint_path(cli.checkpoint), map_location='cpu', weights_only=True)
     model.load_state_dict(state, strict=True)
@@ -104,16 +105,16 @@ def main():
             raise ValueError(f'{path.name}: reference must have one target-gene channel')
         if not all(torch.isfinite(value).all() for value in conditions.values()):
             raise ValueError(f'{path.name}: non-finite input values')
-        conditions['last_HQST'] = torch.randn((1, 1, 256, 256), device='cuda')
+        conditions['last_HQST'] = torch.zeros((1, 1, 256, 256), device='cuda')
         with torch.inference_mode():
-            prediction, _ = diffusion.p_sample_loop(
+            prediction = diffusion.ddim_sample_loop(
                 model, (1, 1, 256, 256), clip_denoised=True, model_kwargs=conditions)
         if prediction.shape != (1, 1, 256, 256) or not torch.isfinite(prediction).all():
             raise RuntimeError(f'{path.name}: invalid single-channel prediction')
-        image = prediction[0, 0].cpu().numpy().astype(np.float32)
+        image = prediction[0, 0].clamp(0, 1).cpu().numpy().astype(np.float32)
         np.savez_compressed(output/f'{path.stem}.npz', prediction=image,
-                            display_min=np.float32(-1), display_max=np.float32(1))
-        preview = np.rint((np.clip(image, -1, 1) + 1) * 127.5).astype(np.uint8)
+                            display_min=np.float32(0), display_max=np.float32(1))
+        preview = np.rint(image * 255).astype(np.uint8)
         Image.fromarray(preview).save(output/f'{path.stem}.png')
         print(f'{number}/{len(inputs)}  {path.stem} -> output/{path.stem}.png + {path.stem}.npz', flush=True)
 

@@ -3,7 +3,7 @@
 Run `python demos/run.py` from a source checkout with the dependencies installed and a CUDA GPU.
 The script reads ten same-name pairs from `demos/input/` and creates `demos/output/` if needed.
 The checkpoint is downloaded to `models/` on the first run. Use `--checkpoint /path/to/model.pt`
-for offline use or an independently trained checkpoint with the same one-gene architecture.
+for offline use with the Ttn demo checkpoint.
 
 ## One input pair
 
@@ -23,18 +23,19 @@ for offline use or an independently trained checkpoint with the same one-gene ar
 | `scgpt` | `(512, 26, 26)` | Encoder-feature placeholder |
 | `pre_he` | `(3, 512)` | H&E-feature placeholder |
 
-Text fields identify the gene (`Ttn`), source tile, source URL and limitations. The demo was derived
-from public Xenium mouse-pup data and an existing public WMB midbrain reference. It uses proxy
-masks, zero scGPT/GigaPath arrays and an unmatched reference.
+Text fields identify the gene (`Ttn`), source tile and source URL. The inputs use public Xenium
+mouse-pup data, H&E component masks, a WMB midbrain reference and zero-filled scGPT/GigaPath arrays.
+The reference is not matched to the mouse-pup tissue.
 
 ## One output pair
 
 `01.npz` contains `prediction`, a finite float32 `(256, 256)` array: one generated expression channel.
-It also records `display_min=-1` and `display_max=1`. These values are raw diffusion output, not
-calibrated transcript counts. `01.png` is a single-channel, 8-bit grayscale preview calculated as:
+Values are clipped to `[0, 1]` and represent normalized expression, not transcript counts.
+The NPZ also records `display_min=0` and `display_max=1`. `01.png` is a single-channel,
+8-bit grayscale preview calculated as:
 
 ```python
-preview = np.rint((np.clip(prediction, -1, 1) + 1) * 127.5).astype(np.uint8)
+preview = np.rint(prediction * 255).astype(np.uint8)
 ```
 
 All ten inputs produce exactly ten PNGs and ten NPZs. The runner writes no metrics, comparison

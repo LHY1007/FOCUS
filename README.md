@@ -37,7 +37,7 @@ FOCUS/
 ├── demos/                       # input/, run.py, empty output/
 ├── docs/                        # usage, algorithm outline and tested environments
 ├── hooks/ / install-hooks.sh    # optional local whitespace check
-├── FOCUS.png / demo_results.png # overview and actual execution-demo images
+├── FOCUS.png / demo_results.png # method overview and demo results
 ├── config/
 │   ├── config_train.yaml        # training hyperparameters
 │   └── config_test.yaml         # sampling hyperparameters
@@ -138,7 +138,7 @@ See [`data_preprocessing/README.md`](data_preprocessing/README.md#2-requirements
 
 ### Tested system and hardware
 
-The small execution demo below was tested on **Ubuntu 20.04.6 LTS**, Python **3.11.15**,
+The demo below was tested on **Ubuntu 20.04.6 LTS**, Python **3.11.15**,
 PyTorch **2.12.0+cu126**, torchvision **0.27.0+cu126**, NVIDIA driver **570.133.20**, and one
 **NVIDIA RTX 6000 Ada Generation (48 GiB)** on CB4. The supplied `FOCUS.yaml` describes a
 different environment (Python 3.10.19 / PyTorch 2.9.0).
@@ -186,12 +186,13 @@ After installing the environment, run from the repository root:
 python demos/run.py
 ```
 
-The script downloads the one-gene demo checkpoint once into `models/` outside the demo folder.
-For offline use, run `python demos/run.py --checkpoint /path/to/one_gene_checkpoint.pt`.
+The script downloads the pretrained Ttn checkpoint once into `models/` outside the demo folder.
+For offline use, download the [Ttn checkpoint](https://github.com/LHY1007/FOCUS/releases/tag/ttn-demo-v2)
+and run `python demos/run.py --checkpoint /path/to/focus-ttn.pt`.
 It writes one **grayscale PNG preview and one compressed float32 NPZ**, `01.png` + `01.npz`
 through `10.png` + `10.npz`, to `demos/output/`. The NPZ key `prediction` is a single-channel
-256×256 raw diffusion prediction, not transcript counts. PNG values map the fixed `[-1, 1]`
-display range to `[0, 255]`; the exact rule is in [input/output documentation](docs/usage.md).
+256×256 normalized expression map with values in `[0, 1]`. The PNG displays the same values
+on an 8-bit grayscale; the exact rule is in [input/output documentation](docs/usage.md).
 Only these 20 result files are written there: no logs, metrics, comparisons or checkpoints.
 Git cannot track an empty directory, so the script
 creates `output/` automatically; downloadable demo packages include the empty folder.
@@ -200,25 +201,20 @@ Each PNG is a real Xenium mouse-pup **H&E image** (256×256 RGB). Its same-name 
 `low_res`, the **Ttn low-resolution ST map** `(1, 26, 26)`, together with the multi-scale H&E
 subpatches, masks, reference expression and other model conditions. The runner reads both files:
 the PNG supplies `WSI_5120`, and the NPZ supplies the expression and remaining conditions.
-Gene name, source tile, public source URL and limitations are embedded as text fields in the NPZ.
+Gene name, source tile and public source URL are embedded as text fields in the NPZ.
 The BERT metadata vector is precomputed, so this demo needs no separate BERT download.
-The single-gene checkpoint was trained for two optimizer updates and the demo uses four reverse
-diffusion steps. The adult WMB midbrain reference is
-not matched to these mouse-pup tiles; masks are H&E threshold-component proxies, scGPT/GigaPath
-features are zeros, and the coexpression prior is from a single patch. Dataset source terms apply
-separately from the MIT code license. This demo tests the input/output workflow. Scientific analysis
-requires matched references, computed encoder features and trained weights.
+Input definitions and data sources are described in [docs/usage.md](docs/usage.md).
+Dataset source terms apply separately from the MIT code license.
 
-The default scientific inference configuration uses 400 reverse steps; the small demo uses 4.
-On the Windows laptop described above, all ten input pairs completed in **22.24 seconds**.
-On CB4, they took **11.45 seconds**. Both measurements include process startup, model loading,
+On the Windows laptop described above, all ten input pairs completed in **30.91 seconds**.
+On CB4, they took **19.36 seconds**. Both measurements include process startup, model loading,
 inference and writing ten PNGs and ten NPZs, with the checkpoint already downloaded.
 These are single-run measurements; runtime depends on the computer and sampling settings.
 
 ![Demo results](demo_results.png)
 
-**Demo results.** Each row shows H&E, the 26×26 low-resolution Ttn input and the generated
-256×256 preview from the two-update checkpoint.
+**Demo results.** Each row shows H&E, the 26×26 low-resolution Ttn input, the 256×256 prediction
+and measured Ttn expression for the same patch. Expression maps use a 0–1 display range.
 
 ### Documentation and contribution
 
@@ -523,8 +519,7 @@ FOCUS is evaluated using:
    - The dataset requires **all** of `HR_ST_256.npz`, `spot_ST.npz`, `5120_to256.npy`, `320_to16.npy`
      and `cell_mask.npy` for a patch; a patch missing any of them is skipped with a warning
    - Supply `pre_he.npy` and `scgpt_data/` as well: the current model requires numeric tensors for both.
-     The execution demo provides explicitly labelled zero placeholders, which are unsuitable for
-     assessing enhancement accuracy.
+     The bundled demo supplies its precomputed conditions; see [input definitions](docs/usage.md).
    - Tiles rejected by the H&E pass can still have ST grids written for them (see
      [`data_preprocessing/README.md`](data_preprocessing/README.md#55-run-order)); those tiles have no
      `WSI/` patch and are skipped here
