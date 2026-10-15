@@ -1,0 +1,11 @@
+.git
+.serena
+models
+logs*
+TEST_Result*
+demos/output
+build
+dist
+*.egg-info
+__pycache__
+*.pyc

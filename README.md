@@ -17,7 +17,7 @@ Here we present FOCUS, a multimodal generative foundation model for coordinated 
 
 Trained and evaluated across ten ST platforms, 34 tissue contexts and over 1.7 million tissue patches with more than 5.8 million matched scRNA-seq profiles, FOCUS improved the performance of individual enhancement tasks and provided additional gains when coupled limitations were addressed jointly rather than independently. Across immunology, tissue development and oncology, FOCUS recovered biologically consistent patterns obscured in native ST or isolated enhancement, enabling clearer inference of neutrophil-tumor interactions, spatial osteocyte differentiation and primary-metastatic HNSCC programs.
 
-![Figure 1 | Coupled ST limitations and FOCUS overview](assets/fig1_focus_overview.png)
+![Figure 1 | Coupled ST limitations and FOCUS overview](FOCUS.png)
 
 **Figure 1 | Coupled ST limitations and FOCUS overview.** (**a**) Illustration of spatial gene profiling of heterogeneous tissue. (**b**) Three representative coupled limitations: resolution-sensitivity, resolution-alignment, and sensitivity-cell-level fidelity in cellularly dense tissues. (**c**) FOCUS integrates native ST, paired H&E with cell masks, scRNA-seq references and spatial co-expression priors through task-specific modules, coordinated by a cross-task strategy for joint enhancement of resolution, sensitivity, molecular-tissue alignment and cell-level fidelity.
 
@@ -29,6 +29,15 @@ FOCUS/
 ├── train_part.py                # gene-group loop around the training run
 ├── sample.py                    # inference / evaluation entry point
 ├── FOCUS.yaml                   # conda environment
+├── requirements.txt             # core pip dependencies
+├── setup.py / setup.cfg         # package metadata and build configuration
+├── pyproject.toml / MANIFEST.in # build backend and source-package contents
+├── CONTRIBUTING.md / CHANGELOG.md
+├── Dockerfile                   # optional CUDA container recipe (not yet built here)
+├── demos/                       # input/, run.py, empty output/
+├── docs/                        # usage, pseudocode and software-submission evidence
+├── hooks/ / install-hooks.sh    # optional local whitespace check
+├── FOCUS.png / demo_results.png # overview and actual execution-demo images
 ├── config/
 │   ├── config_train.yaml        # training hyperparameters
 │   └── config_test.yaml         # sampling hyperparameters
@@ -71,16 +80,30 @@ code can be read alongside the method section:
 | Multimodal pretraining (matching layers) | `SpatialMatchingLayer`, `HEMatchingLayer`, `STMatchingLayer`, `ScalePredictionHead` |
 | Prompt / metadata conditioning | `GeneNamePromptProcessor`, `MetadataPromptProcessor`, `SpatialRegionAttention`, `SensitivityNoiseReplacer` |
 
-`UNetModel` is the shared conditional diffusion backbone that wires these modules together and is the
-module returned by `guided_diffusion/script_util.py`. Note that the *attribute* names inside `UNetModel`
-(e.g. `self.ot_align`, `self.he_attention`, `self.lmc`) are unchanged, so checkpoints trained with an
-earlier revision of the repository still load without conversion.
+`UNetModel` is the shared conditional diffusion backbone returned by
+`guided_diffusion/script_util.py`. Attribute names such as `self.ot_align`, `self.he_attention`
+and `self.lmc` are preserved. A checkpoint must nevertheless match the generated gene count:
+the current one-gene model cannot load the older five-gene weights.
 
 ## Installation
 
 ### Environment Setup
 
-Create a conda environment using the provided configuration:
+The source package is version **0.2.0**. With a supported Python environment and a CUDA-compatible
+PyTorch installation, install core dependencies and the package from this checkout:
+
+```bash
+python -m pip install -r requirements.txt
+python -m pip install --no-deps .
+```
+
+`requirements.txt` gives compatible version ranges; the tested versions below are the evidence
+for this deployment. It does not imply that every version combination has been tested.
+The package has not been uploaded to PyPI. Build source and wheel archives with `python -m build`
+after installing the `dev` extra. The source archive contains the full scripts, docs and demo data;
+the wheel installs the core modules and the demo/config assets under `share/focus/`.
+
+Alternatively, create a conda environment using the original provided configuration:
 
 ```bash
 conda env create -f FOCUS.yaml
@@ -127,10 +150,10 @@ would not be a clean-install estimate.
 
 ### Small real-data execution demo
 
-The root-level [`demo/`](demo/) has only these items:
+The root-level [`demos/`](demos/) has only these items:
 
 ```text
-demo/
+demos/
 ├── input/       # 01.png + 01.npz ... 10.png + 10.npz: ten matched input pairs
 ├── run.py       # run this file
 └── output/      # initially empty; generated results go here
@@ -139,14 +162,16 @@ demo/
 After installing the environment, run from the repository root:
 
 ```bash
-python demo/run.py
+python demos/run.py
 ```
 
 The script downloads the one-gene demo checkpoint once into `models/` outside the demo folder.
-For offline use, run `python demo/run.py --checkpoint /path/to/one_gene_checkpoint.pt`.
-It writes exactly one **single-channel float32 TIFF**, `01.tif` through `10.tif`, per input to
-`demo/output/`. Each image is 256×256 and retains the raw diffusion prediction, not transcript
-counts. No logs, metrics, ground-truth comparisons or checkpoints are written into that folder.
+For offline use, run `python demos/run.py --checkpoint /path/to/one_gene_checkpoint.pt`.
+It writes one **grayscale PNG preview and one compressed float32 NPZ**, `01.png` + `01.npz`
+through `10.png` + `10.npz`, to `demos/output/`. The NPZ key `prediction` is a single-channel
+256×256 raw diffusion prediction, not transcript counts. PNG values map the fixed `[-1, 1]`
+display range to `[0, 255]`; the exact rule is in [input/output documentation](docs/usage.md).
+Only these 20 result files are written there: no logs, metrics, comparisons or checkpoints.
 The inputs and run file remain unchanged. Git cannot track an empty directory, so the script
 creates `output/` automatically; downloadable demo packages include the empty folder.
 
@@ -164,8 +189,28 @@ separately from the MIT code license. Use matched references and real encoder fe
 
 Runtime on a normal desktop computer has **not been measured**. The default scientific inference
 configuration uses 400 reverse steps; the small demo uses 4. On the CB4 system described above,
-all ten PNG/NPZ pairs completed in **11.32 seconds**, including startup, model loading and writing
-the ten TIFFs, with a local checkpoint already available (download time excluded).
+all ten PNG/NPZ pairs completed in **11.45 seconds**, including startup, model loading and writing
+the 20 PNG/NPZ outputs, with a local checkpoint already available (download time excluded).
+
+![Actual ten-pair execution demo](demo_results.png)
+
+**Execution-demo results.** Rows show paired H&E, the 26×26 low-resolution Ttn expression input,
+and the generated 256×256 preview. Inputs and results come from the included examples and the
+tested run. The noisy predictions from two-update weights are not evidence of enhancement accuracy.
+
+### Documentation and contribution
+
+See [docs/](docs/index.md) for input/output definitions, a source-aligned algorithm outline and
+[software-submission evidence](docs/software_submission.md). Contribution and release information
+are in [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+GitHub Actions checks package integrity on CPU; it does not validate GPU inference or biology.
+The `.travis.yml`, `.pypirc` and `netlify.toml` files are optional, credential-free CI/publishing/
+hosting configurations. Including them does not publish or deploy anything.
+
+The optional container recipe can be built with `docker build -t focus-st:0.2.0 .` and run with
+`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.2.0`.
+It requires the NVIDIA Container Toolkit. The Docker image has not been built or tested in this
+deployment because no Docker engine is available on CB4.
 
 ### Generated channels
 

@@ -1,0 +1,10 @@
+# Optional legacy CI, matching the journal example's structure. GPU inference runs separately.
+language: python
+python:
+  - "3.11"
+install:
+  - python -m pip install build twine
+script:
+  - python -m compileall -q guided_diffusion transform demos
+  - python -m build
+  - python -m twine check dist/*

@@ -1,0 +1,18 @@
+name: Package integrity
+on: [push, pull_request]
+permissions:
+  contents: read
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python -m pip install build twine
+      - run: python -m compileall -q guided_diffusion transform demos
+      - run: python -m build
+      - run: python -m twine check dist/*
+      - run: python -m pip install --no-deps dist/*.whl
+      - run: python -c "import guided_diffusion; import importlib.metadata as m; print(m.version('focus-st'))"

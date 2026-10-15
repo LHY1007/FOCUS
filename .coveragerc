@@ -1,0 +1,10 @@
+[run]
+branch = True
+source = guided_diffusion,transform
+omit = */__pycache__/*
+
+[report]
+show_missing = True
+exclude_lines =
+    pragma: no cover
+    if __name__ == .__main__.:

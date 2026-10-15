@@ -1,0 +1,8 @@
+# Optional static documentation hosting; this file does not create or deploy a site.
+[build]
+publish = "docs"
+
+[[headers]]
+for = "/*"
+[headers.values]
+X-Content-Type-Options = "nosniff"

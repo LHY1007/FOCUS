@@ -1,0 +1,19 @@
+# Core FOCUS runtime. Install a CUDA-compatible PyTorch build first; see README.
+# Exact versions tested on CB4 are recorded in README, rather than implied for every combination.
+torch>=2.9,<2.13
+torchvision>=0.24,<0.28
+numpy>=1.26,<3
+scipy>=1.11,<2
+scanpy>=1.11,<1.12
+anndata>=0.11,<0.13
+transformers>=4.57,<6
+POT>=0.9.6,<0.10
+blobfile>=3.1,<4
+mpi4py-mpich==3.1.5; sys_platform == "linux"
+mpi4py>=3.1,<5; sys_platform != "linux"
+scikit-image>=0.25,<0.27
+PyYAML>=6,<7
+matplotlib>=3.10,<3.11
+pandas>=2.2,<3
+h5py>=3.12,<4
+Pillow>=11,<13

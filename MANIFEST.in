@@ -1,0 +1,15 @@
+include README.md LICENSE FOCUS.yaml requirements.txt runtime.txt
+include setup.py setup.cfg pyproject.toml Dockerfile .dockerignore
+include CONTRIBUTING.md CHANGELOG.md FOCUS.png demo_results.png
+include .coveragerc .pypirc .travis.yml .gitignore netlify.toml install-hooks.sh
+recursive-include hooks *
+recursive-include .github *.yml
+recursive-include config *.yaml
+recursive-include demos *.py *.png *.npz
+recursive-include docs *.md *.html
+recursive-include data_preprocessing *.py *.md
+recursive-include downstream *.py *.md
+recursive-include basic_net *.py
+include train.py train_part.py sample.py
+prune demos/output
+global-exclude __pycache__ *.py[cod] .DS_Store

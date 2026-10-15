@@ -1,6 +1,6 @@
-"""Run: python demo/run.py
+"""Run: python demos/run.py
 
-Read ten input PNG/NPZ pairs; write one single-channel float32 TIFF per pair.
+Read ten input PNG/NPZ pairs; write one PNG preview and one float32 NPZ per pair.
 The checkpoint is downloaded once to ../models/, outside this demo folder.
 This short-run checkpoint and the proxy conditioning inputs demonstrate execution,
 not the enhancement accuracy reported in the paper.
@@ -112,9 +112,11 @@ def main():
         if prediction.shape != (1, 1, 256, 256) or not torch.isfinite(prediction).all():
             raise RuntimeError(f'{path.name}: invalid single-channel prediction')
         image = prediction[0, 0].cpu().numpy().astype(np.float32)
-        destination = output/f'{path.stem}.tif'
-        Image.fromarray(image).save(destination)
-        print(f'{number}/{len(inputs)}  {path.name} -> output/{destination.name}', flush=True)
+        np.savez_compressed(output/f'{path.stem}.npz', prediction=image,
+                            display_min=np.float32(-1), display_max=np.float32(1))
+        preview = np.rint((np.clip(image, -1, 1) + 1) * 127.5).astype(np.uint8)
+        Image.fromarray(preview).save(output/f'{path.stem}.png')
+        print(f'{number}/{len(inputs)}  {path.stem} -> output/{path.stem}.png + {path.stem}.npz', flush=True)
 
 
 if __name__ == '__main__':
