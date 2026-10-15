@@ -23,13 +23,13 @@ FOCUS/
 ├── train.py                     # training entry point
 ├── train_part.py                # gene-group loop around the training run
 ├── sample.py                    # inference / evaluation entry point
-├── DDPM310.yaml                 # conda environment
+├── FOCUS.yaml                   # conda environment
 ├── config/
 │   ├── config_train.yaml        # training hyperparameters
 │   └── config_test.yaml         # sampling hyperparameters
 ├── guided_diffusion/            # the model and the diffusion machinery
-│   ├── unet.py                  # conditional UNet backbone
-│   ├── gaussian_diffusion.py    # forward/reverse diffusion, p_sample_loop
+│   ├── unet.py                  # diffusion U-Net + the task-specific modules
+│   ├── gaussian_diffusion.py    # forward/reverse diffusion and the training objective
 │   ├── respace.py               # timestep respacing (used by the '400' test setting)
 │   ├── sampler.py               # DPM-Solver utilities
 │   ├── load_dataset.py          # multi-class patch dataset + dataloader
@@ -45,6 +45,25 @@ FOCUS/
 └── assets/                      # figures used by this README
 ```
 
+### Module Map
+
+The classes in `guided_diffusion/unet.py` are named after the modules and mechanisms of the paper, so the
+code can be read alongside the method section:
+
+| Paper | Code |
+| --- | --- |
+| Reference-guided sensitivity enhancement module | `OTBasedScRNASTFusion` (OT-based scRNA–ST fusion), `SpatialGeneMemoryBank` / `GeneMemoryUpdater` / `SparseGeneMemoryAttention` (gene memory bank over the spatial co-expression matrix), `HEGuidedRegionalAttention`, `SpatialGeneCorrelationWeighting` |
+| Morphology-guided alignment module | `ModalityDisentangler`, `MultimodalDisentanglement` |
+| Complexity-aware cell-fidelity module | `CellFidelityConstraining` (with `complexity_score` and `select_high_complexity_patch`), `CellCorrelationGraphEncoder` |
+| Cross-task coordination | `CrossTaskCoordinator`, `TaskTokenAdapter`, `CrossTaskTokenAttention`, `FiLMModulator` |
+| Multimodal pretraining (matching layers) | `SpatialMatchingLayer`, `HEMatchingLayer`, `STMatchingLayer`, `ScalePredictionHead` |
+| Prompt / metadata conditioning | `GeneNamePromptProcessor`, `MetadataPromptProcessor`, `SpatialRegionAttention`, `SensitivityNoiseReplacer` |
+
+`UNetModel` is the shared conditional diffusion backbone that wires these modules together and is the
+module returned by `guided_diffusion/script_util.py`. Note that the *attribute* names inside `UNetModel`
+(e.g. `self.ot_align`, `self.he_attention`, `self.lmc`) are unchanged, so checkpoints trained with an
+earlier revision of the repository still load without conversion.
+
 ## Installation
 
 ### Environment Setup
@@ -52,8 +71,8 @@ FOCUS/
 Create a conda environment using the provided configuration:
 
 ```bash
-conda env create -f DDPM310.yaml
-conda activate ddpm-nm
+conda env create -f FOCUS.yaml
+conda activate focus
 ```
 
 ### Requirements
@@ -68,9 +87,9 @@ conda activate ddpm-nm
   - `timm` (1.0.22) — vision models
   - `mpi4py` (3.1.3) — distributed training
 
-All dependencies are specified in `DDPM310.yaml`.
+All dependencies are specified in `FOCUS.yaml`.
 
-The preprocessing scripts in `data_preprocessing/` need three packages that are **not** in `DDPM310.yaml`:
+The preprocessing scripts in `data_preprocessing/` need three packages that are **not** in `FOCUS.yaml`:
 `opencv-python`, `duckdb` (Xenium transcript queries) and `pyometiff` (Xenium OME-TIFF morphology images).
 See [`data_preprocessing/README.md`](data_preprocessing/README.md#2-requirements).
 
@@ -111,7 +130,7 @@ data_root/
 | `HR_ST_256.npz` | sparse `(65536, G)` | High-resolution ST on a 256×256 grid at 10 µm/bin |
 | `spot_ST.npz` | sparse `(676, G)` | Low-resolution ST on a 26×26 grid at 100 µm/bin |
 | `5120_to256.npy` | `(256, 256, 3)` uint8 | H&E patch at 0.5 µm/px, downsampled from the 5120 px tile |
-| `320_to16.npy` | `(256, 16, 16, 3)` uint8 | Multi-scale H&E sub-patches, sorted by Shannon entropy |
+| `320_to16.npy` | `(256, 16, 16, 3)` uint8 | Multi-scale H&E sub-patches, sorted by complexity |
 | `cell_mask.npy` | `(256, 256, M)` | Cell segmentation masks |
 | `pre_he.npy` | `(3, 256, 256)` | Pre-extracted H&E features |
 | `scgpt_data/` | `{s}to{e}.npy` per 5-gene group | scGPT embeddings per gene group |

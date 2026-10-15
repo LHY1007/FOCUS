@@ -1,3 +1,10 @@
+"""Timestep respacing for the FOCUS reverse process.
+
+`space_timesteps` builds the reduced timestep grid (the `timestep_respacing`
+argument of `config/config_test.yaml`) and `SpacedDiffusion` wraps
+`GaussianDiffusion` so that sampling only visits those steps.
+"""
+
 import numpy as np
 import torch as th
 

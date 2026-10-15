@@ -1,3 +1,10 @@
+"""Gene-group training schedule for FOCUS.
+
+Trains the model one gene group at a time, resuming from the checkpoint of
+the previous group, and writes one checkpoint per group.  Called by `train.py`
+with the parameters assembled from `config/config_train.yaml`.
+"""
+
 import argparse
 import yaml
 import argparse, time, random

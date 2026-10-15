@@ -1,3 +1,50 @@
+"""Conditional diffusion backbone and task-specific modules of FOCUS.
+
+FOCUS keeps one shared high-resolution diffusion U-Net and attaches the
+task-specific modules to it.  The classes below are named after the modules
+and mechanisms of the manuscript:
+
+  Reference-guided sensitivity enhancement module (Sec. 1.3)
+      OTBasedScRNASTFusion             OT-based scRNA-seq <-> ST fusion strategy
+      SpatialGeneMemoryBank            gene memory bank over spatial co-expression
+      GeneMemoryUpdater                query-conditioned update of the memory bank
+      SparseGeneMemoryAttention        sparse read-out from the gene memory bank
+      HEGuidedRegionalAttention        H&E-guided regional attention mechanism
+      SpatialGeneCorrelationWeighting  spatial gene-correlation weighting
+
+  Morphology-guided alignment module (Sec. 1.4)
+      ModalityDisentangler             shared / unique representation decomposition
+      MultimodalDisentanglement        disentangling loss over fused representations
+
+  Complexity-aware cell-fidelity module (Sec. 1.5)
+      CellFidelityConstraining         ST-H&E constraining on cell-cell correlations
+      CellCorrelationGraphEncoder      graph encoder over cell-cell correlations
+      CellFidelityConstraining.complexity_score and
+      CellFidelityConstraining.select_high_complexity_patch implement the
+      curriculum complexity score and the cellular patch selection.
+
+  Cross-task coordination (Sec. 1.6)
+      CrossTaskCoordinator             lightweight cross-task coordinator
+      TaskTokenAdapter                 compresses a feature map into a task token
+      CrossTaskTokenAttention          multi-head cross-attention over task tokens
+      FiLMModulator                    FiLM-style scaling and shifting
+
+  Multimodal pretraining / matching layers (Sec. 1.2)
+      SpatialMatchingLayer             small matching layer for ST / H&E features
+      HEMatchingLayer                  matching layer for the Prov-GigaPath H&E encoder
+      STMatchingLayer                  matching layer for the scGPT-spatial ST encoder
+      ScalePredictionHead              patch-level scale-factor head
+
+  Prompt and conditioning helpers
+      GeneNamePromptProcessor, MetadataPromptProcessor,
+      SpatialRegionAttention, SensitivityNoiseReplacer
+
+`UNetModel` wires all of the above together and is the module returned by
+`guided_diffusion.script_util.sr_create_model`.  Public attribute names are
+deliberately left untouched so that checkpoints trained with earlier
+revisions keep loading unchanged.
+"""
+
 from abc import abstractmethod
 
 import torch
@@ -25,7 +72,7 @@ import torch.nn.functional as F
 
 import ot  # pip install POT
 
-class OTAlignModule(nn.Module):
+class OTBasedScRNASTFusion(nn.Module):
 
     def __init__(self, in_channels: int, reg: float = 10.0, alpha: float = 1e-3, use_conv: bool = False):
         super().__init__()
@@ -44,7 +91,7 @@ class OTAlignModule(nn.Module):
         dtype = h_spot.dtype
 
         B, C, H, W = h_spot.shape
-        assert C == self.in_channels, f"OTAlignModule in_channels={self.in_channels}, but h_spot has C={C}"
+        assert C == self.in_channels, f"OTBasedScRNASTFusion in_channels={self.in_channels}, but h_spot has C={C}"
 
         # --- 1. 从 sc 中取前 C 个基因，与 h_spot 通道对齐 ---
         # 这里假定 gene 对齐已在数据准备阶段完成，如需更精细的索引，可改用 gene index。
@@ -92,15 +139,15 @@ class OTAlignModule(nn.Module):
 
         return h_spot_aligned, L_ot, ot_feat
     
-class LightweightModuleCoordinator(nn.Module):
+class CrossTaskCoordinator(nn.Module):
 
     def __init__(self, in_channels_list, d_token: int = 128, num_heads: int = 4, token_mode: str = "gap", latent_dim: int | None = None):
         super().__init__()
         assert len(in_channels_list) == 4
         self.num_modules = 4
-        self.tokenizers = nn.ModuleList([ExpertTokenizer(C, d_token, mode=token_mode) for C in in_channels_list])
-        self.negotiator = TokenNegotiator(d_token=d_token, num_heads=num_heads, num_modules=self.num_modules)
-        self.modulators = nn.ModuleList([ChannelModulator(d_token, C) for C in in_channels_list])
+        self.tokenizers = nn.ModuleList([TaskTokenAdapter(C, d_token, mode=token_mode) for C in in_channels_list])
+        self.negotiator = CrossTaskTokenAttention(d_token=d_token, num_heads=num_heads, num_modules=self.num_modules)
+        self.modulators = nn.ModuleList([FiLMModulator(d_token, C) for C in in_channels_list])
 
         # 小残差门，初始很小，稳定训练
         self.residual_gates = nn.ParameterList([nn.Parameter(torch.full((1,), -2.0)) for _ in range(self.num_modules)])
@@ -548,12 +595,12 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class SpatialAttention(nn.Module):
+class SpatialRegionAttention(nn.Module):
     """
     Spatial Attention Module for weighting specific regions in the image.
     """
     def __init__(self):
-        super(SpatialAttention, self).__init__()
+        super(SpatialRegionAttention, self).__init__()
         self.conv1 = nn.Conv2d(2, 1, kernel_size=7, padding=3)  # 7x7 conv
         self.sigmoid = nn.Sigmoid()
 
@@ -566,12 +613,12 @@ class SpatialAttention(nn.Module):
         return self.sigmoid(attn) * x  # Apply attention weights to input
 
 
-class GeneRelationWeighting(nn.Module):
+class SpatialGeneCorrelationWeighting(nn.Module):
     """
     Module to adjust ST gene features based on a gene relationship matrix.
     """
     def __init__(self, num_genes, gene_relation_matrix=None):
-        super(GeneRelationWeighting, self).__init__()
+        super(SpatialGeneCorrelationWeighting, self).__init__()
         gene_relation_matrix = torch.tensor(gene_relation_matrix, dtype=torch.float32)
 
         self.gene_relation_matrix = nn.Parameter(gene_relation_matrix)
@@ -592,14 +639,14 @@ class GeneRelationWeighting(nn.Module):
 
 
 
-class GeneNameFeatureProcessor(nn.Module):
+class GeneNamePromptProcessor(nn.Module):
     def __init__(self, out_channels=20, spatial_size=64):
         """
         处理 gene_name_features：
          - 输入：tensor shape [batch, 20, 768]
          - 输出：tensor shape [batch, 20, spatial_size, spatial_size]
         """
-        super(GeneNameFeatureProcessor, self).__init__()
+        super(GeneNamePromptProcessor, self).__init__()
         self.out_channels = out_channels  # 应与输入的第二个维度一致（20）
         self.spatial_size = spatial_size
         # 将每个基因的 768 维映射到 64x64 的平面（4096 个元素）
@@ -621,9 +668,9 @@ class GeneNameFeatureProcessor(nn.Module):
         x = self.conv2d2(x)
         return x
 
-class MetadataFeatureProcessor(nn.Module):
+class MetadataPromptProcessor(nn.Module):
     def __init__(self, out_channels=20, spatial_size=64):
-        super(MetadataFeatureProcessor, self).__init__()
+        super(MetadataPromptProcessor, self).__init__()
         self.out_channels = out_channels
         self.spatial_size = spatial_size
 
@@ -649,7 +696,7 @@ class MetadataFeatureProcessor(nn.Module):
         x = self.upsample2(x) # shape: [batch, 20, 64, 64]
         x = self.conv2d2(x)
         return x
-class ATransformer(nn.Module):
+class SpatialMatchingLayer(nn.Module):
     def __init__(self, in_ch, out_ch, d=128, depth=2, nheads=4, mlp_ratio=4.0):
         super().__init__()
         self.in_proj  = nn.Conv2d(in_ch, d, kernel_size=1, bias=False)
@@ -713,7 +760,7 @@ class UNetModel(nn.Module):
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
 
-        self.Constrained_Refinement = Constrained_Refinement(gene_num=gene_num).cuda()
+        self.Constrained_Refinement = CellFidelityConstraining(gene_num=gene_num).cuda()
 
         
 
@@ -826,7 +873,7 @@ class UNetModel(nn.Module):
             nn.SiLU(),
             zero_module(conv_nd(dims, input_ch, self.gene_num*2, 3, padding=1)),
         )
-        self.pre_he_block = PreHEBlock().cuda()
+        self.pre_he_block = HEMatchingLayer().cuda()
         self.to_q = nn.Linear(model_channels, model_channels, bias=False)
         self.to_k = nn.Linear(model_channels, model_channels, bias=False)
         self.to_v = nn.Linear(model_channels, model_channels, bias=False)
@@ -834,8 +881,8 @@ class UNetModel(nn.Module):
         self.to_q_con = nn.Linear(model_channels, model_channels, bias=False)
         self.to_k_con = nn.Linear(int(model_channels*1.5), model_channels, bias=False)
         self.to_v_con = nn.Linear(int(model_channels*1.5), model_channels, bias=False)
-        self.replacer = FeatureNoiseReplacer(replacement_prob=0.8) 
-        self.ot_align = OTAlignModule(
+        self.replacer = SensitivityNoiseReplacer(replacement_prob=0.8) 
+        self.ot_align = OTBasedScRNASTFusion(
             in_channels=self.gene_num,
             reg=10.0,       
             alpha=1e-3,     
@@ -843,7 +890,7 @@ class UNetModel(nn.Module):
         )
         # co_expression = np.load('./gene_coexpre.npy')
 
-        self.MemoryNetwork = GeneMemoryNetwork(gene_dim=64, num_genes=self.gene_num,query_dim=self.gene_num)
+        self.MemoryNetwork = SpatialGeneMemoryBank(gene_dim=64, num_genes=self.gene_num,query_dim=self.gene_num)
         #self.optimized_gmsd = OptimizedGMSD(GMSD_loss(), self.gene_num, co_expression_new)
         self.GMSD_loss = GMSD_loss(num_channels=self.model_channels)
         self.conv_layer1 = nn.Sequential(
@@ -856,8 +903,8 @@ class UNetModel(nn.Module):
             conv_nd(dims, input_ch+self.gene_num, input_ch, 3, padding=1),
             nn.SiLU()
         )
-        self.scale_head = ScaleHead(in_ch=ch)
-        self.he_attention = HEGuidedAttention(
+        self.scale_head = ScalePredictionHead(in_ch=ch)
+        self.he_attention = HEGuidedRegionalAttention(
         scales=[1.0, 2.0, 4.0],
         gamma=2.0,
         kappa=0.5,
@@ -867,11 +914,11 @@ class UNetModel(nn.Module):
         self.lmc_d_token = 128   
         self.lmc_heads   = 4     
         self.lmc_token_mode = "gap"  
-        self.T_st   = ATransformer(in_ch=2*self.gene_num, out_ch=128*2, d=256, depth=2, nheads=4)
-        self.T_wsi = ATransformer(in_ch=3,     out_ch=128, d=256, depth=2, nheads=4)
+        self.T_st   = SpatialMatchingLayer(in_ch=2*self.gene_num, out_ch=128*2, d=256, depth=2, nheads=4)
+        self.T_wsi = SpatialMatchingLayer(in_ch=3,     out_ch=128, d=256, depth=2, nheads=4)
         self.inject_alpha = 1e-3  # 0.001
 
-        self.lmc = LightweightModuleCoordinator(
+        self.lmc = CrossTaskCoordinator(
             in_channels_list=[128, 128, 128, 128],
             d_token=self.lmc_d_token,
             num_heads=self.lmc_heads,
@@ -879,7 +926,7 @@ class UNetModel(nn.Module):
             latent_dim=128
         )
         self.reduce_F4 = torch.nn.Conv2d(192, 128, kernel_size=1)
-        self.proj_sc = SCGPTReproject()
+        self.proj_sc = STMatchingLayer()
     def convert_to_fp16(self):
         """
         Convert the torso of the model to float16.
@@ -1053,7 +1100,7 @@ class UNetModel(nn.Module):
         Final_merge = th.transpose(Final_merge, 1, 2)  # [N x 16 x 4096 ]
         Final_merge = th.reshape(Final_merge, (Final_merge.shape[0], Final_merge.shape[1], h_x.shape[2], h_x.shape[3]))  # [N x 16 x 64 x64 ]
         
-        meta_processor = MetadataFeatureProcessor(out_channels=20, spatial_size=64)
+        meta_processor = MetadataPromptProcessor(out_channels=20, spatial_size=64)
         batch_size = x.shape[0]  
         device = Final_merge.device 
         
@@ -1090,14 +1137,14 @@ class UNetModel(nn.Module):
 
         return com_WSI, com_spot,  dist_WSI, dist_spot, GMSD_loss, attention_weights,Constrained_loss,L_ot,scale_pred, self.out(h)
 
-class GeneMemoryNetwork(nn.Module):
+class SpatialGeneMemoryBank(nn.Module):
     def __init__(self, query_dim, num_genes, gene_dim):
         """
         :param query_dim: 单基因查询向量的通道数 (例如 3)
         :param num_genes: 基因记忆库中的基因数量 (例如 200)
         :param gene_dim: 每个基因的特征维度 (例如 32)
         """
-        super(GeneMemoryNetwork, self).__init__()
+        super(SpatialGeneMemoryBank, self).__init__()
         self.query_dim = query_dim
         self.num_genes = num_genes
         self.gene_dim = gene_dim
@@ -1106,8 +1153,8 @@ class GeneMemoryNetwork(nn.Module):
         self.WK = nn.Linear(gene_dim, gene_dim)
         self.WV = nn.Linear(gene_dim, gene_dim)
 
-        self.meta_updater = MetaMemoryUpdater(gene_dim)
-        self.sparse_attention = SparseAttention(sparsity=0.3)
+        self.meta_updater = GeneMemoryUpdater(gene_dim)
+        self.sparse_attention = SparseGeneMemoryAttention(sparsity=0.3)
 
         self.cross_attention = nn.MultiheadAttention(embed_dim=gene_dim, num_heads=8)
 
@@ -1183,7 +1230,7 @@ class GeneMemoryNetwork(nn.Module):
         return gene_features.unsqueeze(1).expand(-1, self.gene_dim)  # [num_genes, gene_dim]
 
 
-class MetaMemoryUpdater(nn.Module):
+class GeneMemoryUpdater(nn.Module):
     def __init__(self, gene_dim):
         super().__init__()
         self.adaptive_layer = nn.Linear(gene_dim, gene_dim)
@@ -1202,7 +1249,7 @@ class MetaMemoryUpdater(nn.Module):
         return adapted_memory
 
 
-class SparseAttention(nn.Module):
+class SparseGeneMemoryAttention(nn.Module):
     def __init__(self, sparsity=0.1):
         super().__init__()
         self.sparsity = sparsity
@@ -1225,7 +1272,7 @@ class SparseAttention(nn.Module):
         weighted_memory = torch.einsum('bqt,bqtd->bqd', sparse_weights, sparse_memory)
         return weighted_memory
 
-class FeatureNoiseReplacer:
+class SensitivityNoiseReplacer:
     def __init__(self, replacement_prob=0.8):
         self.replacement_prob = replacement_prob
     def replace_with_noise(self, feature_map, ratio, dtype=torch.float32):
@@ -1253,7 +1300,7 @@ class FeatureNoiseReplacer:
 
         return replaced_feature
 
-class ScaleHead(nn.Module):
+class ScalePredictionHead(nn.Module):
     """
     从低分辨率特征图预测 patch-level 放大系数 S。
     默认输入 [B, C, H, W]，C≈64~256，H,W≈32~64。
@@ -1279,7 +1326,7 @@ from typing import Tuple, List, Optional
 from torchvision.transforms import GaussianBlur
 
 
-class HEGuidedAttention(nn.Module):
+class HEGuidedRegionalAttention(nn.Module):
 
     
     def __init__(
@@ -1462,7 +1509,7 @@ class HEGuidedAttention(nn.Module):
 
 
 
-class SimpleGraphEncoder(nn.Module):
+class CellCorrelationGraphEncoder(nn.Module):
     def __init__(self, in_dim, hidden_dim=64):
         super().__init__()
         self.fc1 = nn.Linear(in_dim, hidden_dim)
@@ -1475,12 +1522,12 @@ class SimpleGraphEncoder(nn.Module):
 
 
 
-class Constrained_Refinement(nn.Module):
+class CellFidelityConstraining(nn.Module):
     def __init__(self, gene_num=20, feat_dim=64, radius=3):
         super().__init__()
         self.gene_num = gene_num
         self.feat_dim = feat_dim
-        self.gnn = SimpleGraphEncoder(in_dim=feat_dim, hidden_dim=feat_dim)
+        self.gnn = CellCorrelationGraphEncoder(in_dim=feat_dim, hidden_dim=feat_dim)
         self.radius = radius
 
     def forward(self, HE, HQST, cell_mask):
@@ -1488,7 +1535,7 @@ class Constrained_Refinement(nn.Module):
         total_loss = 0.0
         eps = 1e-6
 
-        HE_crop, HQST_crop, coords = self.select_high_entropy_region(
+        HE_crop, HQST_crop, coords = self.select_high_complexity_patch(
             HE, HQST, patch_size=16, return_coords=True
         )
 
@@ -1564,7 +1611,7 @@ class Constrained_Refinement(nn.Module):
         return corr.detach() 
 
 
-    def shannon_entropy(self, patch):
+    def complexity_score(self, patch):
         patch = patch.detach().cpu()
         patch = patch - patch.min()
         patch = patch / (patch.max() + 1e-8)
@@ -1574,7 +1621,7 @@ class Constrained_Refinement(nn.Module):
         entropy = -torch.sum(prob * torch.log2(prob))
         return entropy.item()
 
-    def select_high_entropy_region(self, HE, HQST, patch_size=16, return_coords=False):
+    def select_high_complexity_patch(self, HE, HQST, patch_size=16, return_coords=False):
         B, _, H, W = HE.shape
         n_h = H // patch_size
         n_w = W // patch_size
@@ -1588,7 +1635,7 @@ class Constrained_Refinement(nn.Module):
                 for j in range(n_w):
                     patch = gray[i*patch_size:(i+1)*patch_size,
                                  j*patch_size:(j+1)*patch_size]
-                    entropies[i, j] = self.shannon_entropy(patch)
+                    entropies[i, j] = self.complexity_score(patch)
 
             max_idx = torch.argmax(entropies)
             row, col = divmod(max_idx.item(), n_w)
@@ -1618,7 +1665,7 @@ class Constrained_Refinement(nn.Module):
         return ssim
     
 
-class TinyBiEncoder(nn.Module):
+class ModalityDisentangler(nn.Module):
     def __init__(self, G, d):
         super().__init__()
         self.proj_x = nn.Linear(G, d, bias=False)
@@ -1637,7 +1684,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 
-class MultiModalFusion(nn.Module):
+class MultimodalDisentanglement(nn.Module):
 
     def __init__(self, gene_dim=1000, embed_dim=64, lambda_mm=1.0):
         super().__init__()
@@ -1690,7 +1737,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 
 
-class ExpertTokenizer(nn.Module):
+class TaskTokenAdapter(nn.Module):
     def __init__(self, C: int, d_token: int, mode: str = "gap"):
         super().__init__()
         self.mode = mode
@@ -1712,7 +1759,7 @@ class ExpertTokenizer(nn.Module):
 import torch
 import torch.nn as nn
 
-class TokenNegotiator(nn.Module):
+class CrossTaskTokenAttention(nn.Module):
     def __init__(self, d_token: int, num_heads: int = 4, dropout: float = 0.0, num_modules: int = 4): 
         super().__init__()
         self.mha = nn.MultiheadAttention(embed_dim=d_token, num_heads=num_heads, dropout=dropout, batch_first=True) 
@@ -1733,7 +1780,7 @@ class TokenNegotiator(nn.Module):
         return x
 
 
-class ChannelModulator(nn.Module):
+class FiLMModulator(nn.Module):
     def __init__(self, d_token: int, C: int):
         super().__init__()
         self.mlp = nn.Sequential(
@@ -1753,7 +1800,7 @@ class ChannelModulator(nn.Module):
         gamma = gamma.view(B, C, 1, 1).expand(B, C, H, W)
         beta  = beta.view(B, C, 1, 1).expand(B, C, H, W)
         return gamma, beta
-class PreHEBlock(nn.Module):
+class HEMatchingLayer(nn.Module):
     def __init__(self):
         super().__init__()
 
@@ -1784,7 +1831,7 @@ class PreHEBlock(nn.Module):
         return x
 
 
-class SCGPTReproject(nn.Module):
+class STMatchingLayer(nn.Module):
     def __init__(self):
         super().__init__()
         self.channel_reduce = nn.Conv2d(512, 128, kernel_size=1)

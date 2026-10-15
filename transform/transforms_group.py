@@ -5,6 +5,13 @@
 # @Email     : xiaoqiqi177@gmail.com
 # @File    : transforms_group.py
 # **************************************
+"""Grouped image transformations (torchvision-derived).
+
+Provides `Compose`, `Resize`, `Normalize`, the random augmentation classes and
+`AddGaussianNoise`, which the FOCUS data pipeline uses to build the H&E and ST
+patch tensors.
+"""
+
 from __future__ import division
 import torch
 import math

@@ -1,3 +1,12 @@
+"""Multi-class patch dataset for FOCUS.
+
+`Data_all` reads one directory per tissue type, builds the low-resolution ST
+input, the paired H&E patches, the scGPT-spatial embeddings, the scRNA-seq
+reference used by the OT fusion and the spatial co-expression matrix that
+backs the gene memory bank.  `load_data` is the factory used by `train.py`,
+`train_part.py` and `sample.py`.
+"""
+
 import os
 import numpy as np
 from matplotlib import pyplot as plt

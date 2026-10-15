@@ -1,3 +1,9 @@
+"""Timestep samplers for the FOCUS diffusion training objective.
+
+`create_named_schedule_sampler` selects how timesteps are drawn while
+training; `LossSecondMomentResampler` is the importance-sampling variant.
+"""
+
 from abc import ABC, abstractmethod
 
 import numpy as np

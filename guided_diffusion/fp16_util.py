@@ -1,5 +1,7 @@
-"""
-Helpers to train with 16-bit precision.
+"""Helpers to train with 16-bit precision.
+
+Mixed-precision training of the FOCUS diffusion backbone: master-parameter
+bookkeeping plus the loss-scaling logic used by `guided_diffusion.train_util`.
 """
 
 import numpy as np

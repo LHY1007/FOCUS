@@ -1,7 +1,8 @@
-"""
-Helpers for various likelihood-based losses. These are ported from the original
+"""Helpers for various likelihood-based losses. These are ported from the original
 Ho et al. diffusion models codebase:
 https://github.com/hojonathanho/diffusion/blob/1e0dceb3b3495bbe19116a5e1b3596cd0706c543/diffusion_tf/utils.py
+
+Used by `GaussianDiffusion` when the variational lower bound is enabled.
 """
 
 import numpy as np

@@ -1,5 +1,7 @@
-"""
-Various utilities for neural networks.
+"""Various utilities for neural networks.
+
+Layer factories and helpers shared by the FOCUS diffusion backbone
+(`guided_diffusion.unet`) and its task-specific modules.
 """
 
 import math

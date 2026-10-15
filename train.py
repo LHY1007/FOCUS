@@ -1,3 +1,12 @@
+"""Train FOCUS.
+
+Reads `./code/config/config_train.yaml`, builds the data loader, the
+conditional U-Net and the diffusion process, then hands control to
+`guided_diffusion.train_util.TrainLoop`.
+
+    python train.py
+"""
+
 import os, torch.multiprocessing as mp
 os.environ["DISPLAY"] = ""
 os.environ["MPLBACKEND"] = "Agg"

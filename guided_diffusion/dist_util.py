@@ -1,5 +1,8 @@
-"""
-Helpers for distributed training.
+"""Helpers for distributed training.
+
+FOCUS runs on a single GPU per process: `setup_dist()` is called once from
+`train.py` and `dev()` returns the device used by the training loop, the
+sampler and the checkpoint loader.
 """
 
 import io

@@ -1,3 +1,10 @@
+"""DPM-Solver sampler used for FOCUS inference.
+
+Provides `NoiseScheduleVP`, `model_wrapper` and `DPM_Solver`, i.e. the
+fast ODE/SDE solver that `sample.py` uses to run the reverse process in a
+handful of steps instead of the full 1000-step ancestral loop.
+"""
+
 import torch
 import torch.nn.functional as F
 import math

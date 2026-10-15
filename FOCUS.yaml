@@ -1,4 +1,4 @@
-name: ddpm-nm
+name: focus
 channels:
   - pytorch
   - nvidia
@@ -267,4 +267,3 @@ dependencies:
       - traitlets==5.14.3
       - transformers==4.57.1
       - triton==3.5.0
-prefix: /home/cbtil4/anaconda3/envs/ddpm-nm

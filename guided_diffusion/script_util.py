@@ -1,3 +1,11 @@
+"""Factories for the FOCUS model, the diffusion process and the CLI.
+
+`sr_create_model_and_diffusion` is the single construction point used by
+`train.py`, `train_part.py` and `sample.py`; `add_dict_to_argparser` turns the
+keys of `config/config_train.yaml` / `config/config_test.yaml` into CLI
+arguments.  `get_ssim` and `get_psnr` implement the evaluation metrics.
+"""
+
 import argparse
 from matplotlib import pyplot as plt
 import numpy as np

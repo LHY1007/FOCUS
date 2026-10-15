@@ -1,3 +1,11 @@
+"""Training loop for FOCUS.
+
+`TrainLoop` implements the cross-platform training procedure of the paper
+(Sec. 3.1): it keeps the U-Net encoder frozen, optimises the task-specific
+modules and the conditional fusion / matching layers, and periodically saves
+plain `state_dict` checkpoints that `sample.py` reloads.
+"""
+
 import copy
 import functools
 import os

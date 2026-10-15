@@ -1,7 +1,14 @@
-"""
-This code started out as a PyTorch port of Ho et al's diffusion models:
-https://github.com/hojonathanho/diffusion/blob/1e0dceb3b3495bbe19116a5e1b3596cd0706c543/diffusion_tf/diffusion_utils_2.py
-Docstrings have been added, as well as DDIM sampling and a new collection of beta schedules.
+"""Gaussian diffusion process for FOCUS.
+
+Wraps the standard forward / reverse process and defines the training
+objective used in the paper (Sec. 3.1, cross-platform training):
+
+    L = L_noise (smooth-L1) + L_disent + L_grad + L_scale
+        + L_gene_HE + L_OT + L_Constrained
+
+`training_losses` calls the conditional U-Net, receives the auxiliary outputs
+of the task-specific modules (disentangling terms, OT loss, cell-fidelity
+constraining loss, scale prediction) and assembles the weighted sum.
 """
 import sys
 sys.path.append('/home/zeiler/MIA/Diffusion-ST')

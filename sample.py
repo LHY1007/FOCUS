@@ -1,3 +1,11 @@
+"""Run FOCUS inference and compute the evaluation metrics.
+
+Reloads a checkpoint written by `train_part.py`, runs the reverse diffusion
+process over the test split and reports the per-gene-group metrics.
+
+    python sample.py
+"""
+
 import os, re, glob, gc, yaml, torch
 import numpy as np
 import torch.nn.functional as F

@@ -5,6 +5,12 @@
 # @Email     : xiaoqiqi177@gmail.com
 # @File    : functional.py
 # **************************************
+"""Functional image transforms (torchvision-derived).
+
+Pure functions used by `transform.transforms_group`; kept vendored so the
+FOCUS preprocessing pipeline has no torchvision version constraint.
+"""
+
 from __future__ import division
 import torch
 import math
