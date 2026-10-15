@@ -6,7 +6,15 @@
 
 ## Overview
 
-Understanding tissue organization requires accurate molecular quantification and faithful spatial localization. Spatial omics, particularly spatial transcriptomics (ST), face measurement trade-offs that limit simultaneous achievement of molecular and spatial fidelity across spatial resolution, detection sensitivity, molecular-tissue alignment and cell-level fidelity. Existing computational methods typically target individual aspects and optimize them in isolation, despite their interdependence. Here we present FOCUS, a multimodal generative foundation model for coordinated ST enhancement. FOCUS integrates native ST with histology images, cell masks, scRNA-seq references and spatial co-expression priors through task-specific modules, with cross-task coordination enabling joint correction of co-occurring limitations. FOCUS improved the performance of individual enhancement tasks and provided additional gains with coordinated mitigation of coupled limitations. Across immunology, tissue development and oncology, FOCUS recovered biologically consistent patterns obscured in native ST or isolated enhancement, enabling clearer inference of neutrophil-tumor interactions, spatial osteocyte differentiation and primary-metastatic HNSCC programs. Together, FOCUS establishes coordinated enhancement of molecular and spatial fidelity as a strategy for downstream biological inference from ST.
+Understanding tissue function and pathological states requires resolving the spatial organization of cells and molecular activities. Spatial transcriptomics (ST) enables molecular profiling in situ, but faces measurement trade-offs across spatial resolution, detection sensitivity, molecular-tissue alignment and cell-level fidelity. These limitations are coupled rather than independent: smaller capture units increase spatial resolution but capture fewer transcripts per unit and restrict sensitivity, whereas larger capture units aggregate neighbouring-cell signals, blurring anatomical boundaries and compromising molecular-tissue alignment and cell-level fidelity. Existing computational methods typically target individual aspects in isolation, and independent correction can produce molecular profiles inconsistent with their spatial context.
+
+Here we present FOCUS, a multimodal generative foundation model for coordinated ST enhancement. Built on a conditional diffusion framework with large-scale multimodal training, FOCUS integrates native ST with paired H&E images and cell masks, scRNA-seq references and spatial co-expression priors through selectively activated task-specific modules — reference-guided sensitivity enhancement, morphology-guided alignment and complexity-aware cell-level fidelity — coordinated by a cross-task strategy that compresses the activated modules into task-specific tokens, exchanges them through multi-head cross-attention and converts them into scaling and shifting coefficients (FiLM), so that each module conditions its update on the others.
+
+Trained and evaluated across ten ST platforms, 34 tissue contexts and over 1.7 million tissue patches with more than 5.8 million matched scRNA-seq profiles, FOCUS improved the performance of individual enhancement tasks and provided additional gains when coupled limitations were addressed jointly rather than independently. Across immunology, tissue development and oncology, FOCUS recovered biologically consistent patterns obscured in native ST or isolated enhancement, enabling clearer inference of neutrophil-tumor interactions, spatial osteocyte differentiation and primary-metastatic HNSCC programs.
+
+![Figure 1 | Coupled ST limitations and FOCUS overview](assets/fig1_focus_overview.png)
+
+**Figure 1 | Coupled ST limitations and FOCUS overview.** (**a**) Illustration of spatial gene profiling of heterogeneous tissue. (**b**) Three representative coupled limitations: resolution-sensitivity, resolution-alignment, and sensitivity-cell-level fidelity in cellularly dense tissues. (**c**) FOCUS integrates native ST, paired H&E with cell masks, scRNA-seq references and spatial co-expression priors through task-specific modules, coordinated by a cross-task strategy for joint enhancement of resolution, sensitivity, molecular-tissue alignment and cell-level fidelity.
 
 ## Installation
 
@@ -84,6 +92,22 @@ Data should be log-normalized with gene-wise scaling. For details on data prepar
 - [BioBERT](https://github.com/dmis-lab/biobert) - Gene name embeddings
 - [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) - Gene expression embeddings
 - [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) - H&E feature extraction
+
+### Curated Cross-platform Multimodal Dataset
+
+We provide the processed multimodal data used to train and evaluate FOCUS, so that the full pipeline can be reproduced without re-running the per-platform preprocessing. In total the release covers **6,788 paired ST–H&E images** (over **1.7 million patches**) with matched scRNA-seq references (over **5.8 million cell profiles**) and pre-computed spatial gene co-expression matrices, spanning **ten ST platforms** — eight sequencing-based and two imaging-based — across **17 normal and 17 cancer tissues**.
+
+For every sample the release is organized exactly as the directory structure above, so it can be pointed at directly from `config/config_train.yaml` and `config/config_test.yaml`:
+
+- `HR_ST/` and `spot_ST/` — high- and low-resolution ST, with per-gene-group scGPT embeddings under `scgpt_data/`
+- `WSI/` — paired H&E patches at 20× and at multi-scale, cell segmentation masks and pre-extracted H&E features
+- `gene_order.npy` / `gene_name.txt` — the gene panel used for each sample
+- `sc/{scRNA_data}.h5ad` — the matched single-cell reference for the tissue
+- `coexpression_matrix.npy` — the spatial gene–gene co-expression prior
+
+**Download**: [curated cross-platform multimodal datasets](https://www.dropbox.com/scl/fo/8jipnyir34f1farrcgoxk/ADJbjaWY4V2Qv006H7j2j7w?rlkey=ca4buoejjn2d53rqjl5bii7yj&st=i68hdo96&dl=0)
+
+All datasets are derived from public sources; per-sample provenance (platform, tissue, accession) is listed in Supplementary Tables S1–S3 of the paper. The in-house papillary craniopharyngioma (PCP) datasets — Xenium spatial transcriptomics and CODEX spatial proteomics — are deposited in the National Genomics Data Center (NGDC) under accessions **OMIX021475** and **OMIX021470**, respectively, and can be shared for non-commercial academic research in accordance with the applicable data-access requirements.
 
 ## Usage
 
@@ -176,6 +200,12 @@ If you use FOCUS in your research, please cite:
 	doi = {10.64898/2025.12.23.696267},
 }
 ```
+
+## Data and Code Availability
+
+- **Code**: https://github.com/LHY1007/FOCUS
+- **Curated cross-platform multimodal datasets** (paired ST–H&E images, scRNA-seq references, segmented cell masks and pre-computed spatial gene co-expression matrices): [Dropbox](https://www.dropbox.com/scl/fo/8jipnyir34f1farrcgoxk/ADJbjaWY4V2Qv006H7j2j7w?rlkey=ca4buoejjn2d53rqjl5bii7yj&st=i68hdo96&dl=0), with per-sample provenance summarized in Supplementary Tables S1–S3
+- **In-house PCP datasets** (Xenium spatial transcriptomics and CODEX spatial proteomics): National Genomics Data Center, accessions OMIX021475 and OMIX021470
 
 ## Acknowledgments
 
