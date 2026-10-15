@@ -196,7 +196,10 @@ downstream/deconvolution/output/
 ├── bone_labels.csv
 ├── DeconvolutionResults_16-4-NC.csv.gz
 ├── 16-4-NC_deconvolved.h5ad
-└── qc_report.txt
+├── qc_report.txt
+├── qc_per_sample.csv
+├── qc_markers_16-4-NC.csv
+└── qc_vs_xzq_16-4-NC.csv
 
 downstream/annotation/output/
 ├── 16-4-NC_SR_coarse_annotated.h5ad
@@ -204,8 +207,10 @@ downstream/annotation/output/
 └── coarse_celltype_nc.{png,pdf}
 
 downstream/matrix/output/
-└── <sample>.h5ad
+├── h5ad/<sample>.h5ad
+└── figures/<sample>/*.png
 
 downstream/trajectory/output/
-└── nc_preprocessed.h5ad
+├── nc_preprocessed.h5ad
+└── figures/
 ```
