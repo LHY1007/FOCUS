@@ -1,12 +1,17 @@
 # Changelog
 
+## Unreleased
+
+- Add Windows installation timings and package version records.
+- Add preprocessing and downstream dependency groups, including native image libraries.
+- Read Visium scalefactors with Python's built-in JSON parser.
+
 ## 0.2.0 - 2026-10-16
 
 - Rename `demo/` to `demos/`, retaining ten paired H&E PNG and single-gene NPZ inputs.
 - Export a PNG preview and a compressed float32 NPZ prediction for every input; remove TIFF output.
 - Add dependency, packaging, contribution, documentation, container and CI files.
-- Preserve the one-gene model and the execution-only checkpoint; scientific inference quality has
-  not been established by this short-run demo.
+- Use the one-gene model with the two-update demo checkpoint.
 
 ## One-gene demo - 2026-10-16
 

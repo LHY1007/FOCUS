@@ -2,8 +2,7 @@
 
 Read ten input PNG/NPZ pairs; write one PNG preview and one float32 NPZ per pair.
 The checkpoint is downloaded once to ../models/, outside this demo folder.
-This short-run checkpoint and the proxy conditioning inputs demonstrate execution,
-not the enhancement accuracy reported in the paper.
+The README describes the checkpoint and conditioning inputs used in this demo.
 """
 import sys
 sys.dont_write_bytecode = True

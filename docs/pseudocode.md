@@ -1,7 +1,6 @@
-# Source-aligned algorithm outline
+# Algorithm outline
 
-This describes the current repository's execution path. It does not claim that the small demo
-reproduces the paper's quantitative experiments or replaces the manuscript's Methods.
+The outline below follows the training and sampling code in this repository.
 
 ## Training
 
@@ -45,6 +44,4 @@ For each H&E PNG and same-name NPZ:
   Save its scalar plane in NPZ and render that plane as a grayscale PNG.
 ```
 
-The demo uses two-update weights and placeholder conditioning features. A manuscript statement
-about pseudocode location must refer to the actual submitted manuscript; this repository document
-alone does not establish that the Methods section contains it.
+The checkpoint and input conditions used for the demo are described in the root README.

@@ -4,10 +4,9 @@ The YBM reference used for most classes contains neither adipocytes nor
 osteocytes, so those classes can never be called from it. A T2DM scRNA-seq
 reference is mapped onto the NC section with Tangram to cover them.
 
-The merge is deliberately asymmetric: for classes the YBM reference already
-resolves, the existing label is kept and the Tangram prediction is discarded;
-the Tangram call is only accepted for the classes the YBM reference lacks, and
-only above a confidence threshold.
+Tangram labels are accepted only for classes missing from the YBM reference
+and only above the confidence threshold. Existing labels for the other classes
+are kept.
 
 Writes the updated annotation to the run directory.
 """

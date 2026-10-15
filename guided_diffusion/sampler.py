@@ -1,8 +1,7 @@
-"""DPM-Solver sampler used for FOCUS inference.
+"""DPM-Solver implementation.
 
-Provides `NoiseScheduleVP`, `model_wrapper` and `DPM_Solver`, i.e. the
-fast ODE/SDE solver that `sample.py` uses to run the reverse process in a
-handful of steps instead of the full 1000-step ancestral loop.
+Provides `NoiseScheduleVP`, `model_wrapper` and `DPM_Solver` for ODE/SDE sampling.
+The sampling loops in `sample.py` use the diffusion methods selected in its configuration.
 """
 
 import torch
@@ -20,18 +19,17 @@ class NoiseScheduleVP:
             continuous_beta_1=20.,
             dtype=torch.float32,
     ):
-        """Create a wrapper class for the forward SDE (VP type).
-        ***
-        Update: We support discrete-time diffusion models by implementing a picewise linear interpolation for log_alpha_t.
-                We recommend to use schedule='discrete' for the discrete-time diffusion models, especially for high-resolution images.
-        ***
-        The forward SDE ensures that the condition distribution q_{t|0}(x_t | x_0) = N ( alpha_t * x_0, sigma_t^2 * I ).
-        We further define lambda_t = log(alpha_t) - log(sigma_t), which is the half-logSNR (described in the DPM-Solver paper).
-        Therefore, we implement the functions for computing alpha_t, sigma_t and lambda_t. For t in [0, T], we have:
+        r"""Variance-preserving forward diffusion schedule.
+
+        Discrete-time models use piecewise linear interpolation for log_alpha_t.
+        Use schedule='discrete' for these models, including high-resolution images.
+        The forward SDE has conditional distribution q_{t|0}(x_t | x_0) = N ( alpha_t * x_0, sigma_t^2 * I ).
+        Define lambda_t = log(alpha_t) - log(sigma_t), the half-logSNR used in DPM-Solver.
+        For t in [0, T]:
             log_alpha_t = self.marginal_log_mean_coeff(t)
             sigma_t = self.marginal_std(t)
             lambda_t = self.marginal_lambda(t)
-        Moreover, as lambda(t) is an invertible function, we also support its inverse function:
+        The inverse of lambda(t) is:
             t = self.inverse_lambda(lambda_t)
         ===============================================================
         We support both discrete-time DPMs (trained on n = 0, 1, ..., N-1) and continuous-time DPMs (trained on t in [t_0, T]).
@@ -44,7 +42,7 @@ class NoiseScheduleVP:
                 betas: A `torch.Tensor`. The beta array for the discrete-time DPM. (See the original DDPM paper for details)
                 alphas_cumprod: A `torch.Tensor`. The cumprod alphas for the discrete-time DPM. (See the original DDPM paper for details)
             Note that we always have alphas_cumprod = cumprod(1 - betas). Therefore, we only need to set one of `betas` and `alphas_cumprod`.
-            **Important**:  Please pay special attention for the args for `alphas_cumprod`:
+            DDPM and DPM-Solver use different alpha notation:
                 The `alphas_cumprod` is the \hat{alpha_n} arrays in the notations of DDPM. Specifically, DDPMs assume that
                     q_{t_n | 0}(x_{t_n} | x_0) = N ( \sqrt{\hat{alpha_n}} * x_0, (1 - \hat{alpha_n}) * I ).
                 Therefore, the notation \hat{alpha_n} is different from the notation alpha_t in DPM-Solver. In fact, we have

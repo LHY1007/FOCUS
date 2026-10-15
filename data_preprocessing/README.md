@@ -97,21 +97,21 @@ m = sp.load_npz("HR_ST_256.npz")            # (65536, G)
 grid = m.toarray().reshape(256, 256, -1)    # (h, w, gene)
 ```
 
-Counts are accumulated in `int16`, so a single bin saturating above 32767 transcripts would overflow;
-this does not happen at 10 um bins, but keep it in mind if you re-bin to a much coarser grid.
+Counts are accumulated in `int16`; bins with more than 32767 transcripts overflow.
+Check the count range before re-binning to a coarser grid.
 
 ---
 
 ## 2. Requirements
 
 ```bash
-pip install numpy pandas opencv-python Pillow h5py scipy scikit-image tqdm \
-            duckdb pyometiff matplotlib scikit-learn anndata torch
-# Visium HD additionally needs:
-pip install spatialdata spatialdata-io pyvips zarr xarray dask
+python -m pip install ".[preprocessing]"
 ```
 
-Notes on the less obvious ones:
+Run the command from the repository root. Version constraints are listed in `setup.cfg`;
+`FOCUS.yaml` records the original Linux environment.
+
+Additional libraries:
 
 - **`duckdb`** — Xenium only. `Xenium_pami.py` pushes the per-tile transcript window into DuckDB and
   joins it against the gene panel in SQL, which is what keeps the parquet scan from loading the whole
@@ -125,8 +125,8 @@ Notes on the less obvious ones:
 - **`spatialdata` / `spatialdata-io`** — Visium HD only, for the Zarr-backed `SpatialData` object and
   the `visium_hd` reader. Pulls in `zarr`, `xarray` and `dask`.
 - **`pyvips`** — Visium HD only. The tissue image is a multi-gigabyte pyramidal `.btf`; `pyvips`
-  reads single tiles from it on demand instead of materialising the whole slide. It needs the system
-  `libvips` (``apt install libvips`` / ``conda install -c conda-forge pyvips``), not just the wheel.
+  reads single tiles from it on demand instead of materialising the whole slide. The preprocessing
+  extra includes `pyvips[binary]`, which supplies libvips. A system libvips installation is an alternative.
 - `PIL.Image.MAX_IMAGE_PIXELS` and `OPENCV_IO_MAX_IMAGE_PIXELS` are raised in `utils.py`; whole-slide
   images are far larger than Pillow's default decompression-bomb limit.
 
@@ -421,9 +421,8 @@ the first N tiles, which is the cheap way to check a new registration matrix.
   one 2560 px strip at its bottom and right edge. For example, a 6000 px region yields a single tile
   covering the first 5120 px. The `crop_wsi_pixel / 4` margin on the projected bounding box absorbs
   part of that strip, but not all of it: if your transcripts reach the edge of the capture area,
-  widen the margin in `step5_extract_he_tiles.py` and `step6_extract_st_grids.py`. This matches the
-  original tiling behaviour and is preserved deliberately rather than changed, because altering it
-  would regenerate the dataset.
+  widen the margin in `step5_extract_he_tiles.py` and `step6_extract_st_grids.py`. Changing this
+  boundary changes the tile set and requires regenerating the processed data.
 - The complexity score, the 320 x 320 sub-patch filter and the 50 % overlap are the same as in the
   Visium and Xenium branches; a change to any of them has to be made in all three, or the branches
   stop being interchangeable for the dataloader.
@@ -657,7 +656,6 @@ this folder:
 Cell-type annotation, deconvolution and trajectory inference are also outside this folder and are
 documented in [`../downstream/README.md`](../downstream/README.md).
 
-If you would rather not run any of this, the already-processed cross-platform multimodal dataset is
-available for download — see the
+Processed cross-platform multimodal data are also available. See the
 [Curated Cross-platform Multimodal Dataset](../README.md#curated-cross-platform-multimodal-dataset)
 section of the main README.

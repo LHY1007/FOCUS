@@ -6,7 +6,7 @@ recursive-include hooks *
 recursive-include .github *.yml
 recursive-include config *.yaml
 recursive-include demos *.py *.png *.npz
-recursive-include docs *.md *.html
+recursive-include docs *.md *.html *.txt
 recursive-include data_preprocessing *.py *.md
 recursive-include downstream *.py *.md
 recursive-include basic_net *.py

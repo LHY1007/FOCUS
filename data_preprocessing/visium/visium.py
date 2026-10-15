@@ -3,7 +3,7 @@ import cv2
 import numpy as np
 import pandas as pd
 from PIL import Image
-import json2
+import json
 from utils import getGradientMagnitude, get_matrix_from_h5, remove_all_file
 from skimage.measure import shannon_entropy
 import scipy.sparse as sp_sparse
@@ -28,7 +28,8 @@ feature_matrix = 'Visium_Fresh_Frozen_Adult_Mouse_Brain_filtered_feature_bc_matr
 # Load data once
 # ----------------------------------------
 img_array = np.array(Image.open(os.path.join(root, ori_HE_name)))
-json_data = json2.load_file(os.path.join(root, 'spatial/scalefactors_json.json'))
+with open(os.path.join(root, 'spatial/scalefactors_json.json'), encoding='utf-8') as file:
+    json_data = json.load(file)
 MPP = 65.0 / json_data['spot_diameter_fullres']
 
 # Pre-resize for WSI

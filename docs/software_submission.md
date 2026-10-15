@@ -1,46 +1,38 @@
-# Software-submission evidence
+# Software submission
 
-This page records the repository evidence for the Nature code/software submission items.
-It is not a signed declaration and does not replace the journal's editable form.
+The table lists the files and measurements for the Nature software submission checklist.
 
-| Item | Evidence / status |
+| Requirement | Location or status |
 | --- | --- |
-| Source code | This versioned public repository and its source archive |
-| Small dataset | Ten paired real H&E PNG and single-gene ST NPZ inputs in `demos/input/` |
-| Dependencies, OS and tested versions | Root `requirements.txt`, `FOCUS.yaml`, and README's tested-system section |
-| Non-standard hardware | Current implementation requires an NVIDIA CUDA GPU; tested on RTX 6000 Ada 48 GiB |
-| Installation instructions | README and pip packaging; the original full conda environment was not clean-installed in the CB4 deployment |
-| Normal-desktop installation time | Not measured; must remain unclaimed |
-| Demo instructions and expected output | `python demos/run.py`; ten PNGs and ten float32 NPZ predictions |
-| Normal-desktop demo time | Not measured; CB4 timing is reported separately |
-| Use on your own data | Root README, `docs/usage.md` and preprocessing instructions |
-| All manuscript quantitative results | Not reproduced by this execution demo; optional full reproduction remains unverified |
-| License | MIT License; SPDX `MIT`; no numbered license version |
-| Public source | https://github.com/LHY1007/FOCUS |
-| DOI / archival identifier | No DOI has been minted in this task; use an immutable release/commit and arrange a DOI archive before claiming one |
-| Independent colleague trial | Not performed in this task |
+| Source code | [Repository](https://github.com/LHY1007/FOCUS) and versioned release archives |
+| Small dataset | Ten H&E PNG and single-gene ST NPZ pairs in `demos/input/` |
+| Dependencies and operating systems | `requirements.txt`, the extras in `setup.cfg`, `FOCUS.yaml` and the README |
+| Tested versions and hardware | README: tested systems |
+| Installation instructions | README: installation |
+| Desktop installation time | 14 min 31 s on Windows 10, including downloads and one download retry; see README |
+| Demo instructions and outputs | `python demos/run.py`; ten PNGs and ten float32 NPZs |
+| Desktop demo time | Not measured; the CB4 run took 11.45 seconds |
+| Use with other data | README: data preparation and usage; `docs/usage.md` |
+| Reproduction instructions (optional) | [Current commands and paper settings](reproduction.md); full figure reproduction has not been validated |
+| License | MIT License; SPDX `MIT`; no numbered version |
+| Version identifier | [Release v0.2.0](https://github.com/LHY1007/FOCUS/releases/tag/v0.2.0); no DOI assigned |
+| Independent trial | Awaiting a report through the [first-run form](https://github.com/LHY1007/FOCUS/issues/new?template=first-run.yml) |
 
-Suggested license text for the form:
+Preprint version 3 describes the algorithm in Methods sections 1.1–1.6 and 3 (PDF pages 29–39).
+The form's author names and manuscript locations should match the submitted version.
 
-> FOCUS source code is distributed under the MIT License (SPDX: MIT), with no additional
-> restrictions on use of the source code. The copyright and license notice must be retained.
-> Public datasets, pretrained weights and third-party components remain subject to their own
-> licenses and access conditions.
+License text:
 
-Repository URL for the form: `https://github.com/LHY1007/FOCUS`.
-The corresponding-author name and manuscript pseudocode location must be confirmed by the authors.
-Do not tick items whose timing or manuscript evidence has not been established.
+> FOCUS source code is distributed under the MIT License (SPDX: MIT). Redistribution must retain
+> the copyright and license notice. Data, pretrained models and third-party components have
+> their own licenses and access conditions.
 
 ## Reference policies and examples
 
 - [Nature code and software submission checklist](https://www.nature.com/documents/nr-software-policy.pdf)
 - [Nature guidelines for authors submitting code and software](https://www.nature.com/documents/GuidelinesCodePublication.pdf)
 
-The checklist lists MGC and LOL as examples of well-structured software packages:
+The checklist gives these examples of software packages:
 
-- [MGC](https://github.com/neurodata/mgcpy-old): the original example now redirects to this archived repository.
-- [LOL](https://github.com/neurodata/lol): supervised dimensionality reduction.
-
-The reference layout includes legacy CI and publishing files. FOCUS keeps credential-free templates
-for those files, and uses GitHub Actions for package integrity. No PyPI upload, Netlify deployment,
-Travis activation or Docker runtime verification is implied merely by including configuration files.
+- [MGC](https://github.com/neurodata/mgcpy-old), now archived.
+- [LOL](https://github.com/neurodata/lol), supervised dimensionality reduction.

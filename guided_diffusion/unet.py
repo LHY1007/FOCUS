@@ -39,10 +39,9 @@ and mechanisms of the manuscript:
       GeneNamePromptProcessor, MetadataPromptProcessor,
       SpatialRegionAttention, SensitivityNoiseReplacer
 
-`UNetModel` wires all of the above together and is the module returned by
-`guided_diffusion.script_util.sr_create_model`.  Public attribute names are
-deliberately left untouched so that checkpoints trained with earlier
-revisions keep loading unchanged.
+`UNetModel` combines these modules and is constructed by
+`guided_diffusion.script_util.sr_create_model`. Checkpoints must match the
+model architecture and generated gene count.
 """
 
 from abc import abstractmethod

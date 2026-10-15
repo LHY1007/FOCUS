@@ -5,9 +5,8 @@ patch layout exists: cell-level annotation of one section, reference-based
 deconvolution, aggregation of Visium HD 2 um bins into cells, and pseudotime
 trajectory inference.
 
-It is independent of the training code. The scripts read the project's own
-intermediate files and write into a run directory of their own; nothing here
-modifies the raw data.
+The scripts read processed spatial data and references independently of the training code.
+Their outputs are listed in section 7.
 
 ```
 downstream/
@@ -22,9 +21,12 @@ downstream/
 ## 1. Requirements
 
 ```bash
-pip install scanpy anndata numpy pandas scipy scikit-learn matplotlib \
-            shapely rctd-py tangram-sc
+python -m pip install ".[downstream]"
 ```
+
+Run the command from the repository root. Version constraints are listed in `setup.cfg`.
+The extra includes OpenSlide and its native library, PyArrow for Space Ranger parquet files,
+and igraph/Leiden dependencies for clustering.
 
 The deconvolution and trajectory steps were run with a dedicated environment:
 
@@ -55,8 +57,7 @@ the manuscript; change them in the `BASE` block at the top of each script.
 | Segmentation polygons | `cell_segmentation/*_cell_data.csv` |
 | Independent RCTD result (QC only) | `xzq/.../soj_rctd_first_type_nc_min20.csv` |
 
-Two properties of the inputs are worth stating because they bound what the
-analysis can conclude:
+Input conditions:
 
 - The spatial data is **nuclear** segmentation. Cell types that have no nucleus
   (erythrocytes, platelets) cannot be detected in it, so they are removed from
@@ -90,7 +91,7 @@ python 03_qc.py
 `02_run_deconvolution.py` accepts either a cell-level `.h5ad` or a Space Ranger
 bin directory as the spatial input; both are handled by the same code path.
 Samples whose outputs already exist are skipped, so an interrupted run can be
-restarted. On a large section expect hours, not minutes — run it detached:
+restarted. For long runs, start the script in the background:
 
 ```bash
 setsid nohup python 02_run_deconvolution.py > output/run_02.log 2>&1 &
@@ -98,9 +99,7 @@ setsid nohup python 02_run_deconvolution.py > output/run_02.log 2>&1 &
 
 ### Notes
 
-- Marker detection for osteocytes and adipocytes will come back empty; the
-  reference contains neither, so RCTD cannot call them. That is a property of
-  the reference, not a failure of the fit.
+- The reference lacks osteocytes and adipocytes, so RCTD cannot assign these labels.
 - The coarse label set is the one the manuscript figures use. Anything you
   change in `FINE_TO_COARSE` must be changed in `03_qc.py` as well, or the
   agreement check compares two different taxonomies.
@@ -176,7 +175,7 @@ That spatial term is what keeps the pseudotime consistent with the tissue layout
 instead of following the transcriptome alone. One trajectory is produced per
 lineage (osteogenic, adipogenic, chondrogenic).
 
-Two things to carry into any figure or method paragraph:
+Outputs and required intermediate data:
 
 - The step computes the trajectories and stops. Figure assembly is separate;
   `trajectories` holds the trees, subcluster centroids and ordered node paths.

@@ -82,7 +82,7 @@ class Data_all(Dataset):
         # ---- 扫描所有类下的 patch 信息，记录所属类
         self.selected_patches = []
         for cls_name in self.selected_classes:
-            print(f"🔹 Scanning class: {cls_name}")
+            print(f"Scanning class: {cls_name}")
             cls_patches = self._load_patch_list(self.data_root, cls_name)
             # (cls_name, sub, layer_name, patch_id)
             self.selected_patches.extend([(cls_name, *p) for p in cls_patches])
@@ -125,7 +125,7 @@ class Data_all(Dataset):
         patches = []
         root = os.path.join(data_root, cls_name)
         if not os.path.isdir(root):
-            print(f"⚠️ Missing class dir: {root}")
+            print(f"Warning: missing class dir: {root}")
             return patches
 
         for sub in sorted(os.listdir(root)):
@@ -154,7 +154,7 @@ class Data_all(Dataset):
     def _load_sc_reference(self, cls_name):
         sc_dir = os.path.join(self.data_root, cls_name, 'sc')
         if not os.path.isdir(sc_dir):
-            print(f"⚠️ Missing sc dir for {cls_name}: {sc_dir}")
+            print(f"Warning: missing sc dir for {cls_name}: {sc_dir}")
             return None
 
         h5_list = [f for f in os.listdir(sc_dir) if f.endswith('.h5ad')]
@@ -162,7 +162,7 @@ class Data_all(Dataset):
             raise RuntimeError(f"{cls_name}/sc 必须且仅包含一个 .h5ad 文件，当前: {h5_list}")
 
         h5_path = os.path.join(sc_dir, h5_list[0])
-        print(f"🔹 Loading scRNA data for {cls_name}: {h5_path}")
+        print(f"Loading scRNA data for {cls_name}: {h5_path}")
 
         adata = sc.read_h5ad(h5_path)
         adata.var_names = adata.var_names.astype(str)
@@ -197,7 +197,7 @@ class Data_all(Dataset):
             keep_idx = rng.choice(adata.n_obs, size=max_cells, replace=False)
             adata = adata[keep_idx, :].copy()
 
-        print(f"✅ {cls_name} scRNA loaded: cells={adata.n_obs}, genes={adata.n_vars}")
+        print(f"{cls_name} scRNA loaded: cells={adata.n_obs}, genes={adata.n_vars}")
         return adata
 
     # ===================================================== #
@@ -216,7 +216,7 @@ class Data_all(Dataset):
                 order_path = os.path.join(sub_path, 'gene_order.npy')
                 name_path = os.path.join(sub_path, 'gene_name.txt')
                 if not (os.path.exists(order_path) and os.path.exists(name_path)):
-                    print(f"⚠️ Missing gene files for {(cls_name, sub)}: {order_path} | {name_path}")
+                    print(f"Warning: missing gene files for {(cls_name, sub)}: {order_path} | {name_path}")
                     continue
                 order = np.load(order_path)[:self.gene_num].astype(int)
                 names = np.loadtxt(name_path, dtype=str, ndmin=1)[:self.gene_num]
@@ -254,7 +254,7 @@ class Data_all(Dataset):
             key = (cls_name, sub)
             if key not in self.sub_gene_info:
                 # 若该子数据集未提供基因文件则跳过该 patch
-                print(f"⚠️ Skip patch without gene info: {(cls_name, sub, layer_name, patch_id)}")
+                print(f"Warning: skipping patch without gene info: {(cls_name, sub, layer_name, patch_id)}")
                 continue
 
             idxN = self.sub_gene_info[key]['idxN']
@@ -270,7 +270,7 @@ class Data_all(Dataset):
             if not (os.path.exists(paths['hr']) and os.path.exists(paths['spot']) and
                     os.path.exists(paths['wsi5120']) and os.path.exists(paths['wsi320']) and
                     os.path.exists(paths['mask'])):
-                print(f"⚠️ Missing files for patch: {paths}")
+                print(f"Warning: missing files for patch: {paths}")
                 continue
 
             # 稀疏矩阵读取与截取
@@ -302,7 +302,7 @@ class Data_all(Dataset):
             pre_he = load_pre_he(pre_he_path)
             if pre_he is None:
                 # 缺失则补零矩阵
-                print(f"⚠️ Missing pre_he for patch: {pre_he_path}, using zero array.")
+                print(f"Warning: missing pre_he for patch: {pre_he_path}, using zero array.")
             prehe_list.append(pre_he)
         # 转为数组
         self.SR_ST_all = np.asarray(sr_list, dtype=np.float32)

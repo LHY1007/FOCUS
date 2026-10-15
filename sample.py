@@ -186,7 +186,7 @@ def main(Output):
 
             save_sample_images(gt, pred, j, os.path.join(results_dir, "samples"))
 
-        logger.log("✅ Finished\n")
+        logger.log("Finished\n")
         gc.collect()
         torch.cuda.empty_cache()
 

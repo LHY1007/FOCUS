@@ -25,7 +25,7 @@ for offline use or an independently trained checkpoint with the same one-gene ar
 
 Text fields identify the gene (`Ttn`), source tile, source URL and limitations. The demo was derived
 from public Xenium mouse-pup data and an existing public WMB midbrain reference. It uses proxy
-masks, zero scGPT/GigaPath arrays and an unmatched reference; it is not a biological benchmark.
+masks, zero scGPT/GigaPath arrays and an unmatched reference.
 
 ## One output pair
 
@@ -46,5 +46,5 @@ The output names match the input names. Move prior results elsewhere before reus
 For full training and evaluation, prepare the structured dataset described in the root README and
 `data_preprocessing/README.md`, set `gene_num: 1` and a matching gene order, and run `train.py` or
 `sample.py` with `--config`. Align reference genes and expression columns by gene identity.
-Do not substitute an arbitrary photograph for registered H&E, or treat a PNG alone as ST data.
-Supply real encoder features and an appropriate reference for scientific interpretation.
+Register the H&E image to the ST coordinates. Supply computed encoder features and a tissue-matched
+single-cell reference.

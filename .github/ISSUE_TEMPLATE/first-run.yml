@@ -2,11 +2,6 @@ name: First-run feedback
 description: Report how installation and the demo worked on your computer.
 title: "[First run] "
 body:
-  - type: markdown
-    attributes:
-      value: |
-        Follow the installation and demo instructions in the README, then describe what happened below.
-        A failed installation or run is useful feedback too.
   - type: dropdown
     id: experience
     attributes:

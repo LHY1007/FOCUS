@@ -1,14 +1,8 @@
 """Shared helpers for the Visium HD preprocessing pipeline.
 
-Two groups of functions live here:
-
-* **Download helpers** -- used by ``step1_download.py`` to fetch a 10x Visium HD
-  bundle and unpack it.
-* **Tile helpers** -- used by ``step5_extract_tiles.py`` to turn a whole-slide
-  image into the fixed-size patches FOCUS consumes.
-
-Nothing in this module reads the configuration; every function takes its inputs
-explicitly so it can be called from a ``multiprocessing`` worker.
+Download and archive helpers support ``step1_download.py``. Tile and image
+helpers support ``step5_extract_he_tiles.py`` and ``step6_extract_st_grids.py``.
+Functions take explicit arguments for use in multiprocessing workers.
 """
 
 from __future__ import annotations

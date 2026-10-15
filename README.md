@@ -11,11 +11,11 @@ licenses and access conditions; the code license does not replace those terms.
 
 ## Overview
 
-Understanding tissue function and pathological states requires resolving the spatial organization of cells and molecular activities. Spatial transcriptomics (ST) enables molecular profiling in situ, but faces measurement trade-offs across spatial resolution, detection sensitivity, molecular-tissue alignment and cell-level fidelity. These limitations are coupled rather than independent: smaller capture units increase spatial resolution but capture fewer transcripts per unit and restrict sensitivity, whereas larger capture units aggregate neighbouring-cell signals, blurring anatomical boundaries and compromising molecular-tissue alignment and cell-level fidelity. Existing computational methods typically target individual aspects in isolation, and independent correction can produce molecular profiles inconsistent with their spatial context.
+Spatial transcriptomics (ST) measures gene expression within tissue, but its capture units impose a trade-off between resolution and sensitivity. Smaller units locate transcripts more precisely but capture fewer molecules. Larger units combine signals from neighbouring cells, blurring tissue boundaries. Correcting these effects separately can leave expression profiles inconsistent with the tissue image or the cells they represent.
 
-Here we present FOCUS, a multimodal generative foundation model for coordinated ST enhancement. Built on a conditional diffusion framework with large-scale multimodal training, FOCUS integrates native ST with paired H&E images and cell masks, scRNA-seq references and spatial co-expression priors through selectively activated task-specific modules — reference-guided sensitivity enhancement, morphology-guided alignment and complexity-aware cell-level fidelity — coordinated by a cross-task strategy that compresses the activated modules into task-specific tokens, exchanges them through multi-head cross-attention and converts them into scaling and shifting coefficients (FiLM), so that each module conditions its update on the others.
+FOCUS is a multimodal generative foundation model built on conditional diffusion. It combines native ST with paired haematoxylin and eosin (H&E) images, cell masks, single-cell RNA-sequencing references and spatial co-expression priors. Three task-specific modules address sensitivity, alignment with tissue morphology and cell-level fidelity. A cross-task coordinator compresses active modules into tokens, exchanges information through multi-head cross-attention and uses feature-wise linear modulation (FiLM) to condition each module on the others.
 
-Trained and evaluated across ten ST platforms, 34 tissue contexts and over 1.7 million tissue patches with more than 5.8 million matched scRNA-seq profiles, FOCUS improved the performance of individual enhancement tasks and provided additional gains when coupled limitations were addressed jointly rather than independently. Across immunology, tissue development and oncology, FOCUS recovered biologically consistent patterns obscured in native ST or isolated enhancement, enabling clearer inference of neutrophil-tumor interactions, spatial osteocyte differentiation and primary-metastatic HNSCC programs.
+The study trained and evaluated FOCUS across ten ST platforms, 34 tissue contexts and over 1.7 million tissue patches, with more than 5.8 million matched single-cell profiles. Joint enhancement improved performance over treating the tasks separately. Applications examined neutrophil–tumour interactions, spatial osteocyte differentiation and primary–metastatic programmes in head and neck squamous cell carcinoma (HNSCC).
 
 ![Figure 1 | Coupled ST limitations and FOCUS overview](FOCUS.png)
 
@@ -33,9 +33,9 @@ FOCUS/
 ├── setup.py / setup.cfg         # package metadata and build configuration
 ├── pyproject.toml / MANIFEST.in # build backend and source-package contents
 ├── CONTRIBUTING.md / CHANGELOG.md
-├── Dockerfile                   # optional CUDA container recipe (not yet built here)
+├── Dockerfile                   # CUDA container recipe
 ├── demos/                       # input/, run.py, empty output/
-├── docs/                        # usage, pseudocode and software-submission evidence
+├── docs/                        # usage, algorithm outline and tested environments
 ├── hooks/ / install-hooks.sh    # optional local whitespace check
 ├── FOCUS.png / demo_results.png # overview and actual execution-demo images
 ├── config/
@@ -82,7 +82,7 @@ code can be read alongside the method section:
 
 `UNetModel` is the shared conditional diffusion backbone returned by
 `guided_diffusion/script_util.py`. Attribute names such as `self.ot_align`, `self.he_attention`
-and `self.lmc` are preserved. A checkpoint must nevertheless match the generated gene count:
+and `self.lmc` identify these modules within the model. Checkpoints must match the generated gene count:
 the current one-gene model cannot load the older five-gene weights.
 
 ## Installation
@@ -93,17 +93,23 @@ The source package is version **0.2.0**. With a supported Python environment and
 PyTorch installation, install core dependencies and the package from this checkout:
 
 ```bash
-python -m pip install -r requirements.txt
+python -m pip install torch==2.9.0 torchvision==0.24.0 --index-url https://download.pytorch.org/whl/cu126 --timeout 120
+python -m pip install -r requirements.txt --timeout 120
 python -m pip install --no-deps .
 ```
 
-`requirements.txt` gives compatible version ranges; the tested versions below are the evidence
-for this deployment. It does not imply that every version combination has been tested.
+`requirements.txt` lists dependency version ranges. The versions used in our tests are listed below.
 The package has not been uploaded to PyPI. Build source and wheel archives with `python -m build`
 after installing the `dev` extra. The source archive contains the full scripts, docs and demo data;
 the wheel installs the core modules and the demo/config assets under `share/focus/`.
 
-Alternatively, create a conda environment using the original provided configuration:
+For the preprocessing and downstream scripts, install the additional dependencies:
+
+```bash
+python -m pip install ".[preprocessing,downstream]" --timeout 120
+```
+
+The original Linux conda environment is also supplied:
 
 ```bash
 conda env create -f FOCUS.yaml
@@ -122,11 +128,12 @@ conda activate focus
   - `timm` (1.0.22) — vision models
   - `mpi4py` (3.1.3) — distributed training
 
-All dependencies are specified in `FOCUS.yaml`.
+`FOCUS.yaml` records the original training environment.
 
-The preprocessing scripts in `data_preprocessing/` need packages that are **not** in `FOCUS.yaml`:
-`opencv-python` for all three platforms, `duckdb` and `pyometiff` for Xenium, and `spatialdata`,
-`spatialdata-io` and `pyvips` for Visium HD.
+Preprocessing uses OpenCV for image operations, DuckDB and pyometiff for Xenium, and
+SpatialData, spatialdata-io and pyvips for Visium HD. Downstream analysis uses rctd-py,
+Tangram, Shapely, OpenSlide, PyArrow, natsort, NetworkX and Scanpy's Leiden dependencies.
+Their version constraints are in the `preprocessing` and `downstream` extras in `setup.cfg`.
 See [`data_preprocessing/README.md`](data_preprocessing/README.md#2-requirements).
 
 ### Tested system and hardware
@@ -134,21 +141,34 @@ See [`data_preprocessing/README.md`](data_preprocessing/README.md#2-requirements
 The small execution demo below was tested on **Ubuntu 20.04.6 LTS**, Python **3.11.15**,
 PyTorch **2.12.0+cu126**, torchvision **0.27.0+cu126**, NVIDIA driver **570.133.20**, and one
 **NVIDIA RTX 6000 Ada Generation (48 GiB)** on CB4. The supplied `FOCUS.yaml` describes a
-different environment (Python 3.10.19 / PyTorch 2.9.0); a clean installation of that exact
-environment has not been validated in this deployment.
+different environment (Python 3.10.19 / PyTorch 2.9.0).
 
 The other direct runtime dependencies tested were NumPy 2.4.4, SciPy 1.17.1, Scanpy 1.11.5,
 AnnData 0.12.16, Transformers 5.9.0, POT 0.9.7.post1, blobfile 3.3.0,
 mpi4py-mpich 3.1.5, scikit-image 0.26.0, PyYAML 6.0.3, pandas 2.3.3,
-matplotlib 3.10.9, h5py 3.16.0 and Pillow 12.2.0.
+matplotlib 3.10.9, h5py 3.16.0 and Pillow 12.2.0. The full environment is recorded in
+[`docs/environments/linux-cb4.txt`](docs/environments/linux-cb4.txt).
 
-The current model uses CUDA directly and requires an NVIDIA GPU; CPU-only execution and
-other operating systems have not been tested. No minimum GPU-memory requirement has been
-established. Installation time on a normal desktop computer has **not been measured**.
-The CB4 deployment reused a pre-existing scientific Python environment, so its setup time
-would not be a clean-install estimate.
+The Windows installation was tested in a new Python **3.12.14** environment on an
+**ASUS TUF Gaming A15**, with an **AMD Ryzen 9 7940H**, **48 GB RAM** and
+**Windows 10 Pro for Workstations 22H2 (build 19045.5608)**. It used PyTorch
+**2.9.0+cu126**, torchvision **0.24.0+cu126** and Intel MPI **2021.18.1**.
+Core installation took **14 min 31 s**, including package downloads and one download retry;
+Python, driver installation and model downloads were excluded. Core package versions are in
+[`docs/environments/windows-core.txt`](docs/environments/windows-core.txt).
 
-### Small real-data execution demo
+The preprocessing and downstream extras were installed in the same environment. All 39 tested
+modules imported successfully; OpenCV affine transforms, libvips image creation and Parquet
+read/write checks passed. Native library versions were libvips **8.18.7** and OpenSlide **4.0.1**.
+The final package list is in [`docs/environments/windows-tools.txt`](docs/environments/windows-tools.txt).
+
+Optional legacy paths use `accimage` for image decoding and TensorFlow 1.x for TensorBoard
+logging. The tests above used Pillow decoding and the default stdout/log/CSV logger.
+
+The model requires an NVIDIA CUDA GPU. The laptop's RTX 4060 was unavailable to Windows
+during this installation test, so local inference timing is pending.
+
+### Demo
 
 The root-level [`demos/`](demos/) has only these items:
 
@@ -172,7 +192,7 @@ through `10.png` + `10.npz`, to `demos/output/`. The NPZ key `prediction` is a s
 256×256 raw diffusion prediction, not transcript counts. PNG values map the fixed `[-1, 1]`
 display range to `[0, 255]`; the exact rule is in [input/output documentation](docs/usage.md).
 Only these 20 result files are written there: no logs, metrics, comparisons or checkpoints.
-The inputs and run file remain unchanged. Git cannot track an empty directory, so the script
+Git cannot track an empty directory, so the script
 creates `output/` automatically; downloadable demo packages include the empty folder.
 
 Each PNG is a real Xenium mouse-pup **H&E image** (256×256 RGB). Its same-name NPZ contains
@@ -182,26 +202,26 @@ the PNG supplies `WSI_5120`, and the NPZ supplies the expression and remaining c
 Gene name, source tile, public source URL and limitations are embedded as text fields in the NPZ.
 The BERT metadata vector is precomputed, so this demo needs no separate BERT download.
 The single-gene checkpoint was trained for two optimizer updates and the demo uses four reverse
-diffusion steps. This verifies execution, not paper accuracy. The adult WMB midbrain reference is
+diffusion steps. The adult WMB midbrain reference is
 not matched to these mouse-pup tiles; masks are H&E threshold-component proxies, scGPT/GigaPath
 features are zeros, and the coexpression prior is from a single patch. Dataset source terms apply
-separately from the MIT code license. Use matched references and real encoder features for analysis.
+separately from the MIT code license. This demo tests the input/output workflow. Scientific analysis
+requires matched references, computed encoder features and trained weights.
 
 Runtime on a normal desktop computer has **not been measured**. The default scientific inference
 configuration uses 400 reverse steps; the small demo uses 4. On the CB4 system described above,
 all ten PNG/NPZ pairs completed in **11.45 seconds**, including startup, model loading and writing
 the 20 PNG/NPZ outputs, with a local checkpoint already available (download time excluded).
 
-![Actual ten-pair execution demo](demo_results.png)
+![Demo results](demo_results.png)
 
-**Execution-demo results.** Rows show paired H&E, the 26×26 low-resolution Ttn expression input,
-and the generated 256×256 preview. Inputs and results come from the included examples and the
-tested run. The noisy predictions from two-update weights are not evidence of enhancement accuracy.
+**Demo results.** Each row shows H&E, the 26×26 low-resolution Ttn input and the generated
+256×256 preview from the two-update checkpoint.
 
 ### Documentation and contribution
 
 See [docs/](docs/index.md) for input/output definitions, a source-aligned algorithm outline and
-[software-submission evidence](docs/software_submission.md). Contribution and release information
+[software submission details](docs/software_submission.md). Contribution and release information
 are in [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 If you are trying FOCUS for the first time, follow the installation and demo instructions above
@@ -210,14 +230,12 @@ The form asks about your computer, installation time, demo outputs and any uncle
 The example software packages listed in the Nature checklist are linked in
 [software-submission references](docs/software_submission.md#reference-policies-and-examples).
 
-GitHub Actions checks package integrity on CPU; it does not validate GPU inference or biology.
-The `.travis.yml`, `.pypirc` and `netlify.toml` files are optional, credential-free CI/publishing/
-hosting configurations. Including them does not publish or deploy anything.
+GitHub Actions builds and checks the package on CPU. `.travis.yml`, `.pypirc` and `netlify.toml`
+are optional configuration files for Travis CI, PyPI and Netlify; these services are not enabled.
 
 The optional container recipe can be built with `docker build -t focus-st:0.2.0 .` and run with
 `docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.2.0`.
-It requires the NVIDIA Container Toolkit. The Docker image has not been built or tested in this
-deployment because no Docker engine is available on CB4.
+The container requires the NVIDIA Container Toolkit. The Docker recipe has not been tested.
 
 ### Generated channels
 
@@ -379,16 +397,9 @@ species, condition and tissue type, embedded with the BERT model in `{pre_model_
 
 ## Usage
 
-> **Note on paths.** `train.py` and `sample.py` read their configuration from a **hard-coded**
-> `./code/config/config_*.yaml`, so the repository must be checked out as a directory named `code`
-> (or that path adjusted) and the scripts must be run from the directory *containing* `code`:
->
-> ```bash
-> git clone https://github.com/LHY1007/FOCUS.git code
-> cd code
-> ```
->
-> `sample.py` additionally overrides several config values in code (see Inference below).
+Run the commands below from the repository root. By default, `train.py` and `sample.py` read
+`config/config_train.yaml` and `config/config_test.yaml` beside the scripts. Use `--config`
+to select another configuration. Data and output paths are relative to the working directory.
 
 ### Training
 
@@ -476,6 +487,9 @@ them, and the metadata BERT model under `{pre_model_dir}/bert`.
 
 ## Evaluation Metrics
 
+The settings used in the paper and the differences from the current one-gene release are listed
+in [reproduction notes](docs/reproduction.md). The demo uses its own checkpoint and sampling settings.
+
 FOCUS is evaluated using:
 
 - **RMSE**: root mean squared error for intensity accuracy
@@ -494,7 +508,7 @@ FOCUS is evaluated using:
    - Enable mixed precision: `use_fp16: true`
 
 2. **Missing Gene Files**
-   - Ensure `gene_order.npy` and `gene_name.txt` exist for each sample
+   - Check that `gene_order.npy` and `gene_name.txt` exist for each sample
    - Verify gene indices match across ST and scRNA-seq data
    - Confirm the tissue name is listed in `_ALL_CLASSES` in `load_dataset.py`
    - `HR_ST` and `spot_ST` must have the same gene dimension, since both are indexed with `gene_order`
@@ -545,7 +559,7 @@ If you use FOCUS in your research, please cite:
 
 ## Acknowledgments
 
-FOCUS builds upon several excellent open-source projects:
+FOCUS uses code and models from:
 
 - **Diffusion Models**: [Improved DDPM](https://github.com/openai/improved-diffusion)
 - **BioBERT**: [dmis-lab/biobert](https://github.com/dmis-lab/biobert)
@@ -557,7 +571,3 @@ FOCUS builds upon several excellent open-source projects:
 For questions and feedback:
 - Open an issue on GitHub
 - Email: xw405@cam.ac.uk
-
----
-
-**Note**: This is research software. While we strive for correctness, please validate results for your specific application. Contributions and feedback are welcome!

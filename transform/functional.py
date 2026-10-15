@@ -7,8 +7,7 @@
 # **************************************
 """Functional image transforms (torchvision-derived).
 
-Pure functions used by `transform.transforms_group`; kept vendored so the
-FOCUS preprocessing pipeline has no torchvision version constraint.
+Local implementations of the functions used by `transform.transforms_group`.
 """
 
 from __future__ import division
