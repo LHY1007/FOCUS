@@ -165,8 +165,9 @@ The final package list is in [`docs/environments/windows-tools.txt`](docs/enviro
 Optional legacy paths use `accimage` for image decoding and TensorFlow 1.x for TensorBoard
 logging. The tests above used Pillow decoding and the default stdout/log/CSV logger.
 
-The model requires an NVIDIA CUDA GPU. The laptop's RTX 4060 was unavailable to Windows
-during this installation test, so local inference timing is pending.
+The model requires an NVIDIA CUDA GPU. The ten-example demo also passed on this laptop's
+**GeForce RTX 4060 Laptop GPU (8 GB VRAM)**, with NVIDIA driver **616.56** and the
+PyTorch CUDA 12.6 build listed above.
 
 ### Demo
 
@@ -208,10 +209,11 @@ features are zeros, and the coexpression prior is from a single patch. Dataset s
 separately from the MIT code license. This demo tests the input/output workflow. Scientific analysis
 requires matched references, computed encoder features and trained weights.
 
-Runtime on a normal desktop computer has **not been measured**. The default scientific inference
-configuration uses 400 reverse steps; the small demo uses 4. On the CB4 system described above,
-all ten PNG/NPZ pairs completed in **11.45 seconds**, including startup, model loading and writing
-the 20 PNG/NPZ outputs, with a local checkpoint already available (download time excluded).
+The default scientific inference configuration uses 400 reverse steps; the small demo uses 4.
+On the Windows laptop described above, all ten input pairs completed in **22.24 seconds**.
+On CB4, they took **11.45 seconds**. Both measurements include process startup, model loading,
+inference and writing ten PNGs and ten NPZs, with the checkpoint already downloaded.
+These are single-run measurements; runtime depends on the computer and sampling settings.
 
 ![Demo results](demo_results.png)
 

@@ -11,7 +11,7 @@ The table lists the files and measurements for the Nature software submission ch
 | Installation instructions | README: installation |
 | Desktop installation time | 14 min 31 s on Windows 10, including downloads and one download retry; see README |
 | Demo instructions and outputs | `python demos/run.py`; ten PNGs and ten float32 NPZs |
-| Desktop demo time | Not measured; the CB4 run took 11.45 seconds |
+| Desktop demo time | 22.24 seconds on the Windows RTX 4060 laptop; 11.45 seconds on CB4. Both include startup, model loading and 20 output files, excluding checkpoint download; see README |
 | Use with other data | README: data preparation and usage; `docs/usage.md` |
 | Reproduction instructions (optional) | [Current commands and paper settings](reproduction.md); full figure reproduction has not been validated |
 | License | MIT License; SPDX `MIT`; no numbered version |

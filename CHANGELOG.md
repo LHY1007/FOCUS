@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Verify all ten demo inputs on a Windows RTX 4060 laptop and record the runtime.
 - Add Windows installation timings and package version records.
 - Add preprocessing and downstream dependency groups, including native image libraries.
 - Read Visium scalefactors with Python's built-in JSON parser.

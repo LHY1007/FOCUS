@@ -14,8 +14,11 @@ in `demos/output/`. Each NPZ contains a finite float32 `(256, 256)` prediction; 
 that array using the display rule in [usage.md](usage.md).
 
 The included checkpoint has two optimizer updates. Its input conditions are listed in the README.
-The ten examples have been run on CB4. Windows installation and dependency checks have passed;
-the local GPU was unavailable for inference.
+All ten examples passed on CB4 and on Windows 10 with an RTX 4060 Laptop GPU (8 GB).
+The Windows run took 22.24 seconds, including startup, model loading, inference and writing
+ten PNGs and ten NPZs; checkpoint download time was excluded. All predictions were finite,
+single-channel float32 arrays of shape `(256, 256)`, and each PNG matched its NPZ's display
+conversion. Tested system and package versions are listed in the root README.
 
 ## Paper experiments
 
