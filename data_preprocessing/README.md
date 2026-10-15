@@ -1,15 +1,26 @@
 # Data Preprocessing
 
-This folder contains the code that converts raw **10x Visium / VisiumHD** and **10x Xenium**
+This folder contains the code that converts raw **10x Visium**, **10x Visium HD** and **10x Xenium**
 output into the per-patch layout that FOCUS trains and evaluates on. It covers the
 **H&E tiling** and the **transcript-to-grid binning** steps; the embedding, segmentation and
-co-expression steps that also feed the model are listed at the [end of this document](#6-what-is-not-covered-here).
+co-expression steps that also feed the model are listed at the [end of this document](#7-what-is-not-covered-here).
 
 ```
 data_preprocessing/
 ├── visium/
-│   ├── visium.py        # Visium / VisiumHD: H&E tiles + spot_ST grid
+│   ├── visium.py        # Visium: H&E tiles + spot_ST grid
 │   └── utils.py         # h5 matrix reader, gradient magnitude, graph helpers
+├── visium_hd/
+│   ├── config.py        # sample registry and the shared tile geometry
+│   ├── utils.py         # download, tile-grid and block-sum helpers
+│   ├── step1_download.py          # 10x bundle -> unpacked raw directory
+│   ├── step2_export_h5ad.py       # binned outputs -> per-bin .h5ad
+│   ├── step3_build_zarr.py        # raw directory -> SpatialData zarr
+│   ├── step4_rasterize_bins.py    # bin tables -> gene x (y, x) rasters
+│   ├── step5_extract_he_tiles.py  # H&E tiles + multi-scale sub-patch stack
+│   ├── step6_extract_st_grids.py  # transcripts -> HR_ST and spot_ST grids
+│   ├── step7_stitch_preview.py    # low-resolution tiles -> slide preview
+│   └── step8_qc_tile.py           # per-tile H&E / expression check
 └── xenium/
     ├── Xenium_pami.py   # Xenium: aligned H&E tiles + HR_ST and spot_ST grids
     ├── utils.py         # OME-TIFF affine warping, gradient magnitude, graph helpers
@@ -29,25 +40,30 @@ date, e.g. `20221018` / `20241031`) and one folder per patch, named `{i}_{j}`:
 ├── {sample_id}/
 │   ├── HR_ST/extract/{layer}/{i}_{j}/
 │   │   ├── HR_ST_256.npz        # (65536, G) sparse, 256x256 grid at 10 um/bin
-│   │   └── HR_ST_128.npz        # (16384, G) sparse, 128x128 grid at 20 um/bin   (Xenium only)
+│   │   └── HR_ST_128.npz        # (16384, G) sparse, 128x128 grid at 20 um/bin   (Xenium, Visium HD)
 │   ├── spot_ST/extract/{layer}/{i}_{j}/
 │   │   └── spot_ST.npz          # (676, G) sparse, 26x26 grid at 100 um/bin
 │   ├── WSI/extract/{layer}/{i}_{j}/
 │   │   ├── 5120_to256.npy       # (256, 256, 3) uint8, the tile at 10 um/px
 │   │   ├── 320_to16.npy         # (256, 16, 16, 3) uint8, sub-patches at 10 um/px
-│   │   └── 5120.npy             # (5120, 5120, 3) uint8, full-resolution tile (Xenium only)
-│   ├── gene_order.npy           # produced downstream, see section 6
-│   └── gene_name.txt            # produced downstream, see section 6
-└── coexpression_matrix.npy      # produced downstream, see section 6
+│   │   ├── 5120.npy             # (5120, 5120, 3) uint8, full-resolution tile (Xenium, Visium HD)
+│   │   └── WSI_tile.png         # preview of the tile (Visium HD)
+│   ├── gene_order.npy           # produced downstream, see section 7
+│   └── gene_name.txt            # produced downstream, see section 7
+└── coexpression_matrix.npy      # produced downstream, see section 7
 ```
+
+The Visium HD branch also writes `WSI/extract/{layer}/gene_names.csv`, the gene-column order its
+transcript grids use, and `WSI_tile.png`, a preview of each tile.
 
 `gene_groups.csv` sits at the cohort level because the gene panel is shared by every sample of a
 tissue: the Visium script reads `super_root/gene_groups.csv`, the Xenium script the path in its
-`gene_groups` variable.
+`gene_groups` variable. The Visium HD branch has no cohort-level panel: it derives its gene order
+from the sample's own bin table and records it in `gene_names.csv`.
 
 ### Why those numbers
 
-The whole layout follows from the constants both platforms share:
+The whole layout follows from the constants all three platforms share:
 
 | Constant | Value | Meaning |
 | --- | --- | --- |
@@ -61,11 +77,13 @@ The whole layout follows from the constants both platforms share:
 
 So `5120_to256.npy` and `HR_ST_256.npz` describe the *same* 2560 um field at the same 10 um/px
 resolution, one as pixels and one as transcript counts; `spot_ST.npz` is the same field aggregated to
-a Visium-like 100 um spot pitch, which is what makes the Xenium and Visium branches interchangeable
-for the dataloader.
+a Visium-like 100 um spot pitch, which is what makes the Xenium, Visium HD and Visium branches
+interchangeable for the dataloader.
 
-`HR_ST_128.npz` is the same transcripts re-binned to 128 x 128 (20 um/bin) and is only written by the
-Xenium branch.
+`HR_ST_128.npz` is the same transcripts re-binned to 128 x 128 (20 um/bin) and is written by the
+Xenium and Visium HD branches. The Visium HD branch additionally aligns its tiles to the transcript
+raster rather than to the slide, so its tile indices start at the corner of the covered region — see
+[section 4.4](#44-how-tiles-are-selected).
 
 ### Sparse matrix convention
 
@@ -87,7 +105,10 @@ this does not happen at 10 um bins, but keep it in mind if you re-bin to a much 
 ## 2. Requirements
 
 ```bash
-pip install numpy pandas opencv-python Pillow h5py scipy scikit-image tqdm duckdb pyometiff matplotlib scikit-learn anndata torch
+pip install numpy pandas opencv-python Pillow h5py scipy scikit-image tqdm \
+            duckdb pyometiff matplotlib scikit-learn anndata torch
+# Visium HD additionally needs:
+pip install spatialdata spatialdata-io pyvips zarr xarray dask
 ```
 
 Notes on the less obvious ones:
@@ -101,16 +122,22 @@ Notes on the less obvious ones:
   preprocessing entry points, but the imports are unconditional — install them or trim the imports.
 - **`h5py`** is used by `get_matrix_from_h5` in both `utils.py` files; the original `pytables`
   implementation is kept commented out just above it.
+- **`spatialdata` / `spatialdata-io`** — Visium HD only, for the Zarr-backed `SpatialData` object and
+  the `visium_hd` reader. Pulls in `zarr`, `xarray` and `dask`.
+- **`pyvips`** — Visium HD only. The tissue image is a multi-gigabyte pyramidal `.btf`; `pyvips`
+  reads single tiles from it on demand instead of materialising the whole slide. It needs the system
+  `libvips` (``apt install libvips`` / ``conda install -c conda-forge pyvips``), not just the wheel.
 - `PIL.Image.MAX_IMAGE_PIXELS` and `OPENCV_IO_MAX_IMAGE_PIXELS` are raised in `utils.py`; whole-slide
   images are far larger than Pillow's default decompression-bomb limit.
 
-Both scripts are plain Python entry points driven by constants at the top of the file rather than by
-CLI arguments, so there is nothing to install beyond the dependencies and nothing to pass on the
-command line — edit the paths, then run the file.
+The Visium and Xenium scripts are plain entry points driven by constants at the top of the file
+rather than by CLI arguments: edit the paths, then run the file. The Visium HD steps read their paths
+from `visium_hd/config.py` and accept an optional `--sample` argument, so switching sample is a
+one-line edit there.
 
 ---
 
-## 3. Visium / VisiumHD (`visium/visium.py`)
+## 3. Visium (`visium/visium.py`)
 
 ### 3.1 What it does
 
@@ -217,9 +244,197 @@ Two progress bars appear: `Processing WSI` then `Processing Spot-ST`. Both loops
 
 ---
 
-## 4. Xenium (`xenium/Xenium_pami.py`)
+## 4. Visium HD (`visium_hd/`)
+
+Visium HD is handled by its own pipeline rather than by `visium/visium.py`. The reason is the input:
+Visium HD is a 2 um barcode grid over a whole section, not a 6.5 mm slide of 65 um spots, so the
+transcripts have to be rasterised onto the array grid and registered to the H&E image before any tile
+can be cut.
+
+```
+10x bundle ─► raw directory ─► data.zarr ─► data_with_rasters.zarr ─┬─► WSI/{i}_{j}/
+                step1           step3        step4                 └─► HR_ST/{i}_{j}/
+                (step2: per-bin .h5ad)                                    spot_ST/{i}_{j}/
+                                                              step5 + step6
+```
+
+The eight steps are separate files, each runnable on its own and each skipping work that already
+exists on disk:
+
+| Step | Reads | Writes |
+| --- | --- | --- |
+| `step1_download.py` | 10x CDN | unpacked raw directory |
+| `step2_export_h5ad.py` | `square_*um/filtered_feature_bc_matrix` | `square_*um.h5ad` |
+| `step3_build_zarr.py` | raw directory | `data.zarr` |
+| `step4_rasterize_bins.py` | `data.zarr` | `data_with_rasters.zarr` |
+| `step5_extract_he_tiles.py` | raster Zarr + tissue image | `WSI/` |
+| `step6_extract_st_grids.py` | raster Zarr | `HR_ST/`, `spot_ST/` |
+| `step7_stitch_preview.py` | `WSI/` | `restored_WSI_256.png` |
+| `step8_qc_tile.py` | `WSI/` + `HR_ST/` | per-tile QC figure |
 
 ### 4.1 What it does
+
+```
+tissue_image.btf ──pyvips──► 5120 px H&E tile ─► 5120.npy
+                                               ├─► 5120_to256.npy
+                                               └─► 320_to16.npy
+rasterized_002um ──warpAffine──► per-gene 2 um image ─► block sum ─┬─► HR_ST_256.npz  (10 um)
+                                                                   ├─► HR_ST_128.npz  (20 um)
+                                                                   └─► spot_ST.npz    (100 um)
+```
+
+### 4.2 Inputs
+
+| File | Used for |
+| --- | --- |
+| `Visium_HD_<sample>_tissue_image.btf` | the pyramidal H&E image, read with `pyvips` |
+| `scalefactors_json.json` | `microns_per_pixel`, to derive the rescale factor to 0.5 um/px |
+| `square_*um/` | the binned count matrices, one per bin size |
+| `data_with_rasters.zarr` | the gene rasters, from step 4 |
+| the registration matrix | see 4.3 |
+
+`microns_per_pixel` is read from `scalefactors_json.json`. Note that Visium HD publishes it as an
+absolute µm/px value, unlike Visium where the pixel size has to be derived from the 65 um spot
+diameter.
+
+### 4.3 Configuration
+
+All dataset-level constants live in `visium_hd/config.py`:
+
+```python
+DATA_ROOT = Path("/date/hanyu/JYX/data/visiumHD")
+
+SAMPLES = {
+    "Mouse_Kidney_FFPE": {
+        "tissue_image": "Visium_HD_Mouse_Kidney_tissue_image.btf",
+        "raw_dir":      DATA_ROOT / "Mouse_Kidney",
+        "zarr_path":    DATA_ROOT / "Mouse_Kidney" / "data.zarr",
+        "raster_zarr":  DATA_ROOT / "Mouse_Kidney" / "data_with_rasters.zarr",
+        "out_root":     DATA_ROOT / "Visium_HD_Mouse_Kidney_FFPE",
+        "layer":        "20240612",
+        "affine": [[7.30294570e+00, -2.03362911e-02, 4.68210838e+03],
+                   [-2.04357117e-02, -7.30278299e+00, 2.67365002e+04]],
+    },
+}
+
+ACTIVE_SAMPLE = "Mouse_Kidney_FFPE"
+```
+
+`affine` is the one value that cannot be derived from the data: it is the 2 x 3 registration matrix
+that maps rasterised 2 um bin coordinates onto the full-resolution H&E frame, and it has to be
+estimated per section. Everything else is path configuration. `layer` is the date sub-folder inside
+`WSI/`, `HR_ST/` and `spot_ST/`, matching the convention in the other two branches.
+
+The steps take an optional `--sample` to override `ACTIVE_SAMPLE`, so a second section can be
+processed without editing the file.
+
+### 4.4 How tiles are selected
+
+The tile grid is anchored to the **transcript raster**, not to the slide. The four corners of
+`rasterized_002um` are projected through the registration matrix, the bounding box of that projection
+is grown by `crop_wsi_pixel / 4` and clipped to the slide, and tiles are laid out inside it on the
+same 50 % overlapping grid the other branches use.
+
+Two consequences follow, and both matter when matching tiles across branches:
+
+- Tile indices are **relative to that bounding box**, so `0_0` is the top-left corner of the region
+  the transcripts cover, not the top-left corner of the slide. Visium and Xenium number tiles from the
+  slide origin.
+- A slide much larger than its capture area produces tiles only over the capture area, which is what
+  keeps a 60 000 px section from generating tens of thousands of empty tiles.
+
+Within a tile, each 320 x 320 sub-patch must pass a tissue filter before it enters `320_to16.npy`:
+
+- its share of near-flat pixels (Sobel magnitude <= 20) must be below `FLAT_RATIO` = 0.75, **and**
+- mean luminance < 220, **and** mean red channel > 120.
+
+Accepted sub-patches are resized to 16 x 16, cycled until the stack holds 256 entries, and sorted by
+ascending **complexity score** — the Shannon entropy of the sub-patch's intensity histogram. This is
+the quantity the paper calls the complexity score, and the same ordering the Visium and Xenium
+branches apply.
+
+If no sub-patch passes, the tile still gets `5120.npy` and `5120_to256.npy` but no `320_to16.npy`.
+Since the resume check tests for `5120.npy`, such a tile is never revisited; the dataloader, which
+needs all four files, will skip it.
+
+### 4.5 How transcripts are binned
+
+`step6_extract_st_grids.py` reads one gene at a time out of `rasterized_002um`, warps that 2 um image
+into the tile frame with `cv2.warpAffine` using the registration matrix with the tile origin
+subtracted, and block-sums the result at three scales:
+
+| Output | Factor | Grid | Bin |
+| --- | --- | --- | --- |
+| `HR_ST_256.npz` | 20 | 256 x 256 | 10 um |
+| `HR_ST_128.npz` | 40 | 128 x 128 | 20 um |
+| `spot_ST.npz` | 200 | 26 x 26 | 100 um |
+
+5120 is not divisible by 200, so the spot grid is padded to 26 x 200 = 5200 before summing; without
+that pad the last row and column of transcripts would be dropped. Genes are processed in batches of
+`--gene-batch` so that only a slice of the raster is held in memory at a time.
+
+The gene column order is written to `WSI/extract/{layer}/gene_names.csv` and must be kept: the
+dataloader indexes the grids by it.
+
+### 4.6 Gene symbols
+
+Visium HD panels contain duplicated gene symbols, but `.sel(c=...)` on the raster requires the
+coordinate to be unique. `step4_rasterize_bins.py` therefore renames repeats: the first occurrence
+keeps its symbol, later ones become `GENE_1`, `GENE_2`, and so on, in order of appearance. The
+renaming happens once, in step 4, and everything downstream reads the already-unique names.
+
+### 4.7 Run order
+
+```bash
+cd data_preprocessing/visium_hd
+python step1_download.py            # or copy the 10x bundle in yourself
+python step2_export_h5ad.py         # optional, for scanpy work
+python step3_build_zarr.py
+python step4_rasterize_bins.py
+python step5_extract_he_tiles.py    # H&E tiles
+python step6_extract_st_grids.py    # transcripts -> HR_ST / spot_ST
+python step7_stitch_preview.py      # optional visual check
+python step8_qc_tile.py --tile 3_3  # optional visual check
+```
+
+Steps 5 and 6 are independent of each other and both restartable, so they can be run in either order
+or resumed after an interruption. `--workers N` controls the process pool; `--limit N` processes only
+the first N tiles, which is the cheap way to check a new registration matrix.
+
+### 4.8 Caveats
+
+- **The registration matrix is per section and is not checked.** Nothing validates that `affine` is
+  right; a wrong matrix produces tiles that look plausible but pair the wrong H&E field with the
+  wrong transcripts, and only the step 8 overlay or the stitched preview reveals it. Always check a
+  tile with `step8_qc_tile.py` on a new sample.
+- **`data_with_rasters.zarr` must exist before steps 5 and 6.** Both read the rasterised store, not
+  the raw binned outputs; running them against `data.zarr` from step 3 raises a missing-element error.
+- **`step6` re-opens the Zarr once per tile.** `SpatialData` objects cannot be shared across
+  processes, so each worker reads the store in its own process. This is correct but not cheap on a
+  store that has to be re-read from disk; keep `--workers` modest if the store is on a network mount.
+- **Only tiles that already exist are binned.** Steps 5 and 6 each recompute the same tile grid
+  independently. If the tiling constants or the registration matrix change between the two runs, the
+  grids no longer agree and every tile is written twice under different index conventions. Run them
+  with the same config, and clear the output tree when you change either.
+- **The tile loop stops one step before the region edge.** Tiles are emitted while the tile start is
+  at or before `x_max - 5120`, so a region that is not a whole number of tile steps wide loses up to
+  one 2560 px strip at its bottom and right edge. For example, a 6000 px region yields a single tile
+  covering the first 5120 px. The `crop_wsi_pixel / 4` margin on the projected bounding box absorbs
+  part of that strip, but not all of it: if your transcripts reach the edge of the capture area,
+  widen the margin in `step5_extract_he_tiles.py` and `step6_extract_st_grids.py`. This matches the
+  original tiling behaviour and is preserved deliberately rather than changed, because altering it
+  would regenerate the dataset.
+- The complexity score, the 320 x 320 sub-patch filter and the 50 % overlap are the same as in the
+  Visium and Xenium branches; a change to any of them has to be made in all three, or the branches
+  stop being interchangeable for the dataloader.
+- `WSI_tile.png` is written for every tile. It is a convenience preview and roughly doubles the I/O
+  of step 5; drop that write for a large cohort.
+
+---
+
+## 5. Xenium (`xenium/Xenium_pami.py`)
+
+### 5.1 What it does
 
 ```
 morphology.ome.tif ──┐
@@ -230,7 +445,7 @@ gene_groups.csv ─────┴─► HR_ST_128.npz  (128x128, 20 um/bin)
                          spot_ST.npz    (26x26,   100 um/bin)
 ```
 
-### 4.2 Inputs
+### 5.2 Inputs
 
 | File | Used for |
 | --- | --- |
@@ -266,7 +481,7 @@ overwritten with it (`im = plt.imread(root + 'aligned_HE.tif', format="tiff")`) 
 above is discarded. That is the intended path when the H&E has already been registered externally —
 just be aware that the alignment block is then dead code.
 
-### 4.3 Gene panel
+### 5.3 Gene panel
 
 `jsontocsv.py` flattens the Xenium `gene_panel.json` into `gene_groups.csv`:
 
@@ -289,7 +504,7 @@ The resulting order defines the column order of every `HR_ST_*.npz` / `spot_ST.n
 regenerate or reorder this file after you have produced ST grids** — the bins would no longer line up
 with the gene indices.
 
-### 4.4 Configuration
+### 5.4 Configuration
 
 The variables are declared in **two** blocks — one above the H&E pass and one above the ST pass — and
 several are re-assigned in the second block, so the later value wins:
@@ -316,7 +531,7 @@ When switching samples, update the sample folder name
 (`output-XETG00166__0041204__TMA1__20241031__051835`), which is hard-coded in the `morphology_img_info.npy`
 load as well as in both `root` assignments.
 
-### 4.5 Run order
+### 5.5 Run order
 
 `Xenium_pami.py` is written as a linear notebook-style script with two independent passes, and the two
 passes do not talk to each other: **run the H&E pass first**, then the ST pass.
@@ -347,7 +562,7 @@ Note also that the two passes share the global `root`, which block 2 re-assigns 
 defined in block 2 — so `main()` cannot be imported and run on its own without that block executing
 first.
 
-### 4.6 Run
+### 5.6 Run
 
 1. **H&E / WSI pass** — the top-level `for i / for j` loop (writes `320_to16.npy`, `5120.npy`,
    `5120_to256.npy`). Run the file as-is.
@@ -360,7 +575,7 @@ cd data_preprocessing/xenium
 python Xenium_pami.py          # step 1: H&E tiles; add `main()` at the end for step 2
 ```
 
-### 4.7 How transcripts are binned
+### 5.7 How transcripts are binned
 
 `main()` runs one SQL query per tile:
 
@@ -380,7 +595,7 @@ then converted to bin indices per scale, clipped to the grid, and accumulated wi
 auto-detected (`x_location` / `y_location` / one of `gene_symbol`, `gene`, `feature_name`, `geneid`,
 `symbol`), so a panel rename in a newer Xenium release is usually handled without editing the script.
 
-### 4.8 Caveats
+### 5.8 Caveats
 
 - **Blank tiles crash the H&E pass.** If no 320 x 320 sub-patch passes the gradient/brightness filter,
   `rgba_image_320_save` is never assigned and the `WSI_320.shape[0]` line raises `UnboundLocalError`.
@@ -397,7 +612,7 @@ auto-detected (`x_location` / `y_location` / one of `gene_symbol`, `gene`, `feat
 
 ---
 
-## 5. Verifying the output
+## 6. Verifying the output
 
 A quick sanity check that the layout and shapes are right:
 
@@ -415,19 +630,20 @@ sub = np.load("WSI/extract/20241031/0_0/320_to16.npy")
 print(sub.shape)                      # (256, 16, 16, 3) uint8
 ```
 
-For every tile, the gene dimension `G` must equal the number of rows in `gene_groups.csv`, and
-`HR_ST_256.npz`, `HR_ST_128.npz` and `spot_ST.npz` must all share it. The three grids bin the *same*
-transcripts at different scales, so their totals should agree to within the few transcripts that land
+For every tile, the gene dimension `G` must equal the number of rows in `gene_groups.csv` (Visium,
+Xenium) or `gene_names.csv` (Visium HD), and `HR_ST_256.npz`, `HR_ST_128.npz` and `spot_ST.npz` must
+all share it. The three grids bin the *same* transcripts at different scales, so their totals should
+agree to within the few transcripts that land
 exactly on a window edge — a useful check that the binning scales are consistent. Because tiles overlap
 by 50 %, a transcript near a tile border is counted in up to four neighbouring tiles; that is expected,
 and the dataloader treats tiles as independent samples.
 
 ---
 
-## 6. What is not covered here
+## 7. What is not covered here
 
-These files appear in the FOCUS data layout but are produced by separate steps, not by the two scripts
-in this folder:
+These files appear in the FOCUS data layout but are produced by separate steps, not by the scripts in
+this folder:
 
 | File | Produced by |
 | --- | --- |
@@ -437,6 +653,9 @@ in this folder:
 | `sc/{scRNA_data}.h5ad` | the matched single-cell reference for the tissue |
 | `coexpression_matrix.npy` | spatial gene-gene co-expression computed across the cohort |
 | `gene_order.npy`, `gene_name.txt` | the gene indices/names the model is trained on, derived from `gene_groups.csv` |
+
+Cell-type annotation, deconvolution and trajectory inference are also outside this folder and are
+documented in [`../downstream/README.md`](../downstream/README.md).
 
 If you would rather not run any of this, the already-processed cross-platform multimodal dataset is
 available for download — see the

@@ -1,0 +1,15 @@
+__pycache__/
+*.py[cod]
+.Python
+
+# training / inference artefacts
+logs*/
+TEST_Result*/
+checkpoint*.pt
+*.ckpt
+
+# editors and OS
+.idea/
+.vscode/
+.DS_Store
+Thumbs.db

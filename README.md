@@ -36,10 +36,17 @@ FOCUS/
 │   ├── script_util.py           # model/diffusion factory
 │   ├── train_util.py            # TrainLoop
 │   └── ...
-├── data_preprocessing/          # raw Visium / Xenium -> FOCUS patch layout
+├── data_preprocessing/          # raw Visium / Visium HD / Xenium -> FOCUS patch layout
 │   ├── README.md                # step-by-step preprocessing walkthrough
 │   ├── visium/
+│   ├── visium_hd/
 │   └── xenium/
+├── downstream/                  # annotation, deconvolution and trajectory analysis
+│   ├── README.md                # what each analysis does and how to run it
+│   ├── deconvolution/
+│   ├── annotation/
+│   ├── matrix/
+│   └── trajectory/
 ├── basic_net/                   # UNet building blocks
 ├── transform/                   # augmentation / transform helpers
 └── assets/                      # figures used by this README
@@ -89,8 +96,9 @@ conda activate focus
 
 All dependencies are specified in `FOCUS.yaml`.
 
-The preprocessing scripts in `data_preprocessing/` need three packages that are **not** in `FOCUS.yaml`:
-`opencv-python`, `duckdb` (Xenium transcript queries) and `pyometiff` (Xenium OME-TIFF morphology images).
+The preprocessing scripts in `data_preprocessing/` need packages that are **not** in `FOCUS.yaml`:
+`opencv-python` for all three platforms, `duckdb` and `pyometiff` for Xenium, and `spatialdata`,
+`spatialdata-io` and `pyvips` for Visium HD.
 See [`data_preprocessing/README.md`](data_preprocessing/README.md#2-requirements).
 
 ## Data Preparation
@@ -154,17 +162,20 @@ more than one.
 ### Preprocessing Code
 
 **All of the code that produces the layout above from raw platform output lives in [`data_preprocessing/`](data_preprocessing/).**
-It currently covers the two platforms used for the main experiments:
+It covers the three platforms used for the main experiments:
 
 | Platform | Script | Produces |
 | --- | --- | --- |
-| 10x Visium / VisiumHD | [`data_preprocessing/visium/visium.py`](data_preprocessing/visium/visium.py) | `5120_to256.npy`, `320_to16.npy`, `spot_ST.npz` |
+| 10x Visium | [`data_preprocessing/visium/visium.py`](data_preprocessing/visium/visium.py) | `5120_to256.npy`, `320_to16.npy`, `spot_ST.npz` |
 | 10x Xenium | [`data_preprocessing/xenium/Xenium_pami.py`](data_preprocessing/xenium/Xenium_pami.py) | the above plus `5120.npy`, `HR_ST_256.npz`, `HR_ST_128.npz` |
+| 10x Visium HD | [`data_preprocessing/visium_hd/`](data_preprocessing/visium_hd/) (8 steps) | the same as Xenium, plus `WSI_tile.png` and `gene_names.csv` |
 
-Both pipelines share the same tile geometry — a 5120×5120 px tile at 0.5 µm/px (2560 µm of tissue) on a
+All three pipelines share the same tile geometry — a 5120×5120 px tile at 0.5 µm/px (2560 µm of tissue) on a
 50 % overlapping grid, with transcripts binned to 256×256 (10 µm) and 26×26 (100 µm) grids — which is what
-makes the two platforms interchangeable for the dataloader. `data_preprocessing/xenium/jsontocsv.py`
+makes the platforms interchangeable for the dataloader. `data_preprocessing/xenium/jsontocsv.py`
 converts a Xenium `gene_panel.json` into the `gene_groups.csv` panel that defines the gene-column order.
+Visium HD has no shared panel: it derives its gene order from the sample's own bin table and writes it to
+`gene_names.csv`.
 
 The per-platform inputs, configuration variables, run order and known caveats are documented in
 [`data_preprocessing/README.md`](data_preprocessing/README.md).
@@ -188,6 +199,22 @@ For the embedding and feature-extraction steps, refer to:
 Expression values are log-normalized with gene-wise scaling before training; `load_dataset.py` applies
 min–max normalization to `spot_ST` and divides `HR_ST` by its per-patch maximum, keeping that maximum as
 `patch_scale` so predictions can be mapped back to counts.
+
+### Downstream Analysis
+
+[`downstream/`](downstream/) holds the analyses that run on a spatial section once the patch layout
+exists, and that produce the cell-type and trajectory results reported in the paper:
+
+| Analysis | Path | What it does |
+| --- | --- | --- |
+| Deconvolution | [`downstream/deconvolution/`](downstream/deconvolution/) | builds a shared scRNA-seq reference, runs RCTD in doublet mode, then checks composition, markers and agreement against an independent run |
+| Annotation | [`downstream/annotation/`](downstream/annotation/) | combines the RCTD call with the geo-labelled annotation and supplements the classes the reference cannot resolve via a Tangram-mapped T2DM reference |
+| Bin-to-cell matrix | [`downstream/matrix/bin2cell.py`](downstream/matrix/bin2cell.py) | aggregates Visium HD 2 µm bins into segmented nuclei with an STRtree point-in-polygon query |
+| Trajectory inference | [`downstream/trajectory/`](downstream/trajectory/) | preprocesses and scores the section, then runs the stLearn PSTS trajectory for the osteogenic, adipogenic and chondrogenic lineages |
+
+These scripts are independent of training: they read the project's intermediate objects and write to
+their own `output/` directories. Inputs, environment, run order and the known limits of each analysis
+are documented in [`downstream/README.md`](downstream/README.md).
 
 ### Curated Cross-platform Multimodal Dataset
 
@@ -350,7 +377,7 @@ FOCUS is evaluated using:
    - `pre_he.npy` and `scgpt_data/` are optional but silently fall back to zeros, which will degrade
      results — check the warnings printed while loading
    - Tiles rejected by the H&E pass can still have ST grids written for them (see
-     [`data_preprocessing/README.md`](data_preprocessing/README.md#45-run-order)); those tiles have no
+     [`data_preprocessing/README.md`](data_preprocessing/README.md#55-run-order)); those tiles have no
      `WSI/` patch and are skipped here
 
 5. **Slow Training**
