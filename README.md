@@ -16,6 +16,35 @@ Trained and evaluated across ten ST platforms, 34 tissue contexts and over 1.7 m
 
 **Figure 1 | Coupled ST limitations and FOCUS overview.** (**a**) Illustration of spatial gene profiling of heterogeneous tissue. (**b**) Three representative coupled limitations: resolution-sensitivity, resolution-alignment, and sensitivity-cell-level fidelity in cellularly dense tissues. (**c**) FOCUS integrates native ST, paired H&E with cell masks, scRNA-seq references and spatial co-expression priors through task-specific modules, coordinated by a cross-task strategy for joint enhancement of resolution, sensitivity, molecular-tissue alignment and cell-level fidelity.
 
+## Repository Structure
+
+```
+FOCUS/
+├── train.py                     # training entry point
+├── train_part.py                # gene-group loop around the training run
+├── sample.py                    # inference / evaluation entry point
+├── DDPM310.yaml                 # conda environment
+├── config/
+│   ├── config_train.yaml        # training hyperparameters
+│   └── config_test.yaml         # sampling hyperparameters
+├── guided_diffusion/            # the model and the diffusion machinery
+│   ├── unet.py                  # conditional UNet backbone
+│   ├── gaussian_diffusion.py    # forward/reverse diffusion, p_sample_loop
+│   ├── respace.py               # timestep respacing (used by the '400' test setting)
+│   ├── sampler.py               # DPM-Solver utilities
+│   ├── load_dataset.py          # multi-class patch dataset + dataloader
+│   ├── script_util.py           # model/diffusion factory
+│   ├── train_util.py            # TrainLoop
+│   └── ...
+├── data_preprocessing/          # raw Visium / Xenium -> FOCUS patch layout
+│   ├── README.md                # step-by-step preprocessing walkthrough
+│   ├── visium/
+│   └── xenium/
+├── basic_net/                   # UNet building blocks
+├── transform/                   # augmentation / transform helpers
+└── assets/                      # figures used by this README
+```
+
 ## Installation
 
 ### Environment Setup
@@ -29,23 +58,27 @@ conda activate ddpm-nm
 
 ### Requirements
 
-- Python ≥ 3.10
-- PyTorch 2.9.0 (CUDA 12.6)
+- Python ≥ 3.10 (the environment pins 3.10.19)
+- PyTorch 2.9.0 with CUDA 12.6
 - Key dependencies:
-  - `scanpy` (1.11.5) - ST data processing
-  - `anndata` (0.11.4) - Data structures
-  - `pot` (0.9.6) - Optimal transport
-  - `transformers` (4.57.1) - scGPT integration
-  - `timm` (1.0.22) - Vision models
-  - `mpi4py` (3.1.3) - Distributed training
+  - `scanpy` (1.11.5) — ST data processing
+  - `anndata` (0.11.4) — data structures
+  - `pot` (0.9.6) — optimal transport
+  - `transformers` (4.57.1) — scGPT / metadata BERT integration
+  - `timm` (1.0.22) — vision models
+  - `mpi4py` (3.1.3) — distributed training
 
 All dependencies are specified in `DDPM310.yaml`.
+
+The preprocessing scripts in `data_preprocessing/` need three packages that are **not** in `DDPM310.yaml`:
+`opencv-python`, `duckdb` (Xenium transcript queries) and `pyometiff` (Xenium OME-TIFF morphology images).
+See [`data_preprocessing/README.md`](data_preprocessing/README.md#2-requirements).
 
 ## Data Preparation
 
 ### Directory Structure
 
-Organize your data following this structure:
+FOCUS reads one directory tree per tissue type. Organize your data following this structure:
 
 ```
 data_root/
@@ -73,27 +106,69 @@ data_root/
 
 ### Required Files
 
-1. **HR_ST_256.npz**: High-resolution ST data (256×256, sparse format)
-2. **spot_ST.npz**: Low-resolution spot data (26×26, sparse format)
-3. **5120_to256.npy**: H&E patch at 20× magnification
-4. **320_to16.npy**: Multi-scale H&E patches (16×16 grid)
-5. **cell_mask.npy**: Cell segmentation masks
-6. **pre_he.npy**: Pre-extracted H&E features (512-dim)
-7. **scgpt_data/**: scGPT embeddings per gene group
-8. **{scRNA_data}.h5ad**: Single-cell reference (AnnData format)
-9. **coexpression_matrix.npy**: Gene-gene co-expression matrix
-10. **gene_order.npy**: Gene indices for the dataset
-11. **gene_name.txt**: Corresponding gene names
+| File | Shape / format | Description |
+| --- | --- | --- |
+| `HR_ST_256.npz` | sparse `(65536, G)` | High-resolution ST on a 256×256 grid at 10 µm/bin |
+| `spot_ST.npz` | sparse `(676, G)` | Low-resolution ST on a 26×26 grid at 100 µm/bin |
+| `5120_to256.npy` | `(256, 256, 3)` uint8 | H&E patch at 0.5 µm/px, downsampled from the 5120 px tile |
+| `320_to16.npy` | `(256, 16, 16, 3)` uint8 | Multi-scale H&E sub-patches, sorted by Shannon entropy |
+| `cell_mask.npy` | `(256, 256, M)` | Cell segmentation masks |
+| `pre_he.npy` | `(3, 256, 256)` | Pre-extracted H&E features |
+| `scgpt_data/` | `{s}to{e}.npy` per 5-gene group | scGPT embeddings per gene group |
+| `{scRNA_data}.h5ad` | AnnData | Single-cell reference, one `.h5ad` per tissue type |
+| `coexpression_matrix.npy` | `(K, K)` | Spatial gene–gene co-expression prior for the tissue |
+| `gene_order.npy` | `(G,)` int | Column indices into the platform's full gene panel |
+| `gene_name.txt` | `(G,)` str | The matching gene names |
 
-### Data Preprocessing
+`G` is the panel size of the sample, and it must match the gene dimension of `HR_ST_256.npz` and
+`spot_ST.npz` (see [`data_preprocessing/README.md`](data_preprocessing/README.md#1-the-output-layout)).
+`load_dataset.py` selects columns with `gene_order[:gene_num]` and looks up scGPT embeddings with
+`gene_name[:gene_num]`, i.e. each training run consumes the **first `gene_num` entries** of these two
+files. The gene-group loop in `train_part.py` was written to slice the panel per group, but that slicing
+is commented out, so all groups currently see the same first `gene_num` genes — restrict `gene_order.npy`
+/ `gene_name.txt` to the group you want, or restore the slicing, if you intend to train more than one
+group per sample.
 
-The preprocessing code that turns raw Visium / VisiumHD / Xenium output into the layout above — H&E tile extraction, transcript binning onto the high- and low-resolution grids, and gene panel construction — is in [`data_preprocessing/`](data_preprocessing/). See [`data_preprocessing/README.md`](data_preprocessing/README.md) for the per-platform walkthrough.
+The `sc/` directory must contain **exactly one** `.h5ad` — `load_dataset.py` raises if it finds zero or
+more than one.
 
-Processed data should be log-normalized with gene-wise scaling. For the embedding and feature-extraction steps, please refer to:
+### Preprocessing Code
 
-- [BioBERT](https://github.com/dmis-lab/biobert) - Gene name embeddings
-- [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) - Gene expression embeddings
-- [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) - H&E feature extraction
+**All of the code that produces the layout above from raw platform output lives in [`data_preprocessing/`](data_preprocessing/).**
+It currently covers the two platforms used for the main experiments:
+
+| Platform | Script | Produces |
+| --- | --- | --- |
+| 10x Visium / VisiumHD | [`data_preprocessing/visium/visium.py`](data_preprocessing/visium/visium.py) | `5120_to256.npy`, `320_to16.npy`, `spot_ST.npz` |
+| 10x Xenium | [`data_preprocessing/xenium/Xenium_pami.py`](data_preprocessing/xenium/Xenium_pami.py) | the above plus `5120.npy`, `HR_ST_256.npz`, `HR_ST_128.npz` |
+
+Both pipelines share the same tile geometry — a 5120×5120 px tile at 0.5 µm/px (2560 µm of tissue) on a
+50 % overlapping grid, with transcripts binned to 256×256 (10 µm) and 26×26 (100 µm) grids — which is what
+makes the two platforms interchangeable for the dataloader. `data_preprocessing/xenium/jsontocsv.py`
+converts a Xenium `gene_panel.json` into the `gene_groups.csv` panel that defines the gene-column order.
+
+The per-platform inputs, configuration variables, run order and known caveats are documented in
+[`data_preprocessing/README.md`](data_preprocessing/README.md).
+
+Steps that are *not* in `data_preprocessing/` and must be run separately:
+
+| File | Produced by |
+| --- | --- |
+| `cell_mask.npy` | cell segmentation on the H&E patch (e.g. CellViT / StarDist) |
+| `pre_he.npy` | [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) H&E features |
+| `scgpt_data/` | [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) gene-expression embeddings |
+| `coexpression_matrix.npy` | spatial gene–gene co-expression computed across the cohort |
+| `gene_order.npy`, `gene_name.txt` | gene indices/names derived from `gene_groups.csv` |
+
+For the embedding and feature-extraction steps, refer to:
+
+- [BioBERT](https://github.com/dmis-lab/biobert) — gene name embeddings
+- [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) — gene expression embeddings
+- [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) — H&E feature extraction
+
+Expression values are log-normalized with gene-wise scaling before training; `load_dataset.py` applies
+min–max normalization to `spot_ST` and divides `HR_ST` by its per-patch maximum, keeping that maximum as
+`patch_scale` so predictions can be mapped back to counts.
 
 ### Curated Cross-platform Multimodal Dataset
 
@@ -111,7 +186,37 @@ For every sample the release is organized exactly as the directory structure abo
 
 All datasets are derived from public sources; per-sample provenance (platform, tissue, accession) is listed in Supplementary Tables S1–S3 of the paper. The in-house papillary craniopharyngioma (PCP) datasets — Xenium spatial transcriptomics and CODEX spatial proteomics — are deposited in the National Genomics Data Center (NGDC) under accessions **OMIX021475** and **OMIX021470**, respectively, and can be shared for non-commercial academic research in accordance with the applicable data-access requirements.
 
+### Registering a New Tissue Type
+
+`guided_diffusion/load_dataset.py` does not discover tissues from `data_root`; it iterates a fixed list:
+
+```python
+_ALL_CLASSES = [
+    'Human_breast_cancer',
+    'Human_colon_cancer',
+    'Human_healthy_kidney',
+    'Human_kidney_cancer',
+    'Mouse_healthy_brain'
+]
+```
+
+Add your `{tissue_type}` directory name here before training or sampling. Two further values in the same
+file are dataset-specific and should be set per run: the `prompt` in `_embed_metadata()` (platform,
+species, condition and tissue type, embedded with the BERT model in `{pre_model_dir}/bert`) and the
+`max_genes` / `max_cells` caps applied to the scRNA-seq reference.
+
 ## Usage
+
+> **Note on paths.** `train.py` and `sample.py` read their configuration from a **hard-coded**
+> `./code/config/config_*.yaml`, so the repository must be checked out as a directory named `code`
+> (or that path adjusted) and the scripts must be run from the directory *containing* `code`:
+>
+> ```bash
+> git clone https://github.com/LHY1007/FOCUS.git code
+> cd code
+> ```
+>
+> `sample.py` additionally overrides several config values in code (see Inference below).
 
 ### Training
 
@@ -119,7 +224,8 @@ Configure training parameters in `config/config_train.yaml`:
 
 ```yaml
 # Key parameters
-gene_num: 5         # Genes per training group
+all_gene: 5          # Genes covered by one n-block (all_gene // gene_num groups)
+gene_num: 5          # Genes consumed per forward pass
 batch_size: 8        # Training batch size
 SR_times: 10         # Super-resolution factor
 epoch: 3000          # Training epochs
@@ -127,6 +233,9 @@ lr: 0.0001           # Learning rate
 diffusion_steps: 1000
 data_root: '/path/to/data/'
 log_dir: 'logs/'
+pre_model_dir: '/model'   # holds bert/ and the pretrained checkpoints
+dataset_use: 'All'
+n: 1                      # which all_gene-sized block of the panel to train
 ```
 
 Launch training:
@@ -135,36 +244,67 @@ Launch training:
 python train.py
 ```
 
-The training script automatically:
-- Splits genes into groups of size `gene_num`
-- Trains separate models for each gene group
-- Saves checkpoints every 2000 steps
-- Logs training metrics and loss curves
+`train.py` reads `n` from the config and hands off to `train_part.py`, which:
+
+- splits the panel into `all_gene // gene_num` gene groups, one model per group;
+- creates `{log_dir}/{dataset_use}/{SR_times}X/G{start}-{end}_{MMDD-HHMM}/` per group;
+- **skips a gene group that already has a finished checkpoint** (any `model*.pt` whose step number does
+  not end in `000`), so the script can be re-run to fill in missing groups;
+- saves checkpoints every `save_interval` steps and logs loss curves into the run directory.
+
+Note that the per-group gene slicing is commented out in `train_part.py` (see
+[Registering a New Tissue Type](#registering-a-new-tissue-type)), so all groups in one run train on the
+same first `gene_num` genes unless you restore it.
+
+To train a different gene block, change `n`; the group range is
+`[(n-1) * all_gene + i * gene_num, (n-1) * all_gene + (i+1) * gene_num)`.
 
 ### Inference
 
-Configure test parameters in `config/config_test.yaml` and run:
+Configure sampling parameters in `config/config_test.yaml`:
+
+```yaml
+sampling_method: guided     # guided -> p_sample_loop; set to 'ddim' for ddim_sample_loop
+timestep_respacing: '400'   # respaced reverse process
+clip_denoised: True
+SR_times: 10
+gene_num: 5
+all_gene: 5
+data_root: '/path/to/data/'
+```
+
+Then run:
 
 ```bash
 python sample.py
 ```
 
-Outputs are saved to `TEST_Result-demo/`:
-- Predicted gene expression maps (PNG)
-- Ground truth comparisons
-- Quantitative metrics (CSV): RMSE, SSIM, PCC
+`sample.py` discovers checkpoints under `./logs{global_num}/{dataset_use}/10X/G*` and evaluates the
+newest step in each, so its `dataset_use`, `data_root`, `gene_num`, `SR_times`, `global_num` and
+`Output` are set **in the script** (lines 27–35) and override the YAML. Note that the checkpoint glob
+hard-codes `10X` rather than `{SR_times}X`; adjust it if you trained at a different `SR_times`.
+
+Outputs are written to `TEST_Result-demo/{dataset_use}/G{start}-{end}/`:
+
+- `samples/{idx}_{gene}gt.png` and `samples/{idx}_{gene}pred.png` — ground truth and prediction per gene
+- `metrics.csv` — `SampleID, RMSE, SSIM, CC` for every patch
 
 ### Pre-trained Models
 
 Download pre-trained models from [Dropbox](https://www.dropbox.com/scl/fo/gte7fbz2y14syitka3mb0/AOhsVHx4Rdlk9BU2oJRySv4?rlkey=aytpdtg1ae05jf8i139a2e15c&st=5qi9943t&dl=0).
 
+Place the downloaded checkpoints under `logs/{dataset_use}/{SR_times}X/G*/` so that `sample.py` finds
+them, and the metadata BERT model under `{pre_model_dir}/bert`.
+
 ## Evaluation Metrics
 
 FOCUS is evaluated using:
 
-- **RMSE**: Root mean squared error for intensity accuracy
-- **SSIM**: Structural similarity index for spatial patterns
-- **PCC**: Pearson correlation coefficient for gene-wise concordance
+- **RMSE**: root mean squared error for intensity accuracy
+- **SSIM**: structural similarity index for spatial patterns
+- **CC / PCC**: Pearson correlation coefficient for gene-wise concordance
+
+`sample.py` reports all three per patch in `metrics.csv`.
 
 ## Troubleshooting
 
@@ -178,13 +318,28 @@ FOCUS is evaluated using:
 2. **Missing Gene Files**
    - Ensure `gene_order.npy` and `gene_name.txt` exist for each sample
    - Verify gene indices match across ST and scRNA-seq data
+   - Confirm the tissue name is listed in `_ALL_CLASSES` in `load_dataset.py`
+   - `HR_ST` and `spot_ST` must have the same gene dimension, since both are indexed with `gene_order`
 
-3. **Slow Training**
-   - Adjust `num_workers` in DataLoader
+3. **`FileNotFoundError: ./code/config/config_train.yaml`**
+   - The config path is hard-coded; clone the repository into a directory named `code` or edit the path
+     in `train.py` / `sample.py`
+
+4. **No patches loaded**
+   - The dataset requires **all** of `HR_ST_256.npz`, `spot_ST.npz`, `5120_to256.npy`, `320_to16.npy`
+     and `cell_mask.npy` for a patch; a patch missing any of them is skipped with a warning
+   - `pre_he.npy` and `scgpt_data/` are optional but silently fall back to zeros, which will degrade
+     results — check the warnings printed while loading
+   - Tiles rejected by the H&E pass can still have ST grids written for them (see
+     [`data_preprocessing/README.md`](data_preprocessing/README.md#45-run-order)); those tiles have no
+     `WSI/` patch and are skipped here
+
+5. **Slow Training**
+   - Adjust `num_workers` in the `DataLoader`
    - Use SSD storage for data
    - Enable `persistent_workers: true`
 
-4. **NaN Losses**
+6. **NaN Losses**
    - Check input data normalization
    - Verify no inf/nan values in co-expression matrices
    - Reduce learning rate
