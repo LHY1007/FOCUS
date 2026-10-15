@@ -1,7 +1,6 @@
 # ---------------------------------------------------------------------------
 # FOCUS sampling / evaluation configuration
-#   read by sample.py (see README, section "Inference"); several of the values
-#   below are overridden in-script by sample.py.
+#   read by sample.py (see README, section "Inference").
 # ---------------------------------------------------------------------------
 attention_resolutions: 32,16,8
 base_samples: ''
@@ -10,8 +9,8 @@ clip_denoised: True
 data_dir: ''
 dropout: 0.0
 
-all_gene : 5
-gene_num : 5
+all_gene : 1
+gene_num : 1
 SR_times: 10
 dataset_use : 'All'
 epoch : 3000

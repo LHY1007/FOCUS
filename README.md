@@ -127,61 +127,53 @@ would not be a clean-install estimate.
 
 ### Small real-data execution demo
 
-[`demo/data.tar.gz`](demo/data.tar.gz) contains two real Xenium mouse-pup ST/H&E patches,
-50 matched genes and 100 real WMB midbrain scRNA-seq reference profiles. The first five
-genes are used for generation. Source paths, gene order, preprocessing and limitations are
-recorded in [`demo/provenance.json`](demo/provenance.json); the preparation code is
-[`demo/prepare_mouse_demo.py`](demo/prepare_mouse_demo.py).
+The root-level [`demo/`](demo/) has only these items:
 
-This demo checks **execution**, not the paper's enhancement accuracy: the adult brain reference
-is not a matched mouse-pup reference, the cell masks are threshold-component proxies,
-scGPT/GigaPath inputs are zero placeholders, and the coexpression prior comes from one patch.
-The legacy class folder is named `Mouse_healthy_brain`; the mouse-pup patches have not been
-independently annotated as brain. Training and inference use the same two patches.
-Replace these inputs with the matched, pretrained features and references for a scientific run.
-Dataset source terms apply separately from the MIT code license.
-
-From the repository root, after installing dependencies:
-
-```bash
-mkdir -p demo/data
-tar -xzf demo/data.tar.gz -C demo/data --strip-components=1
+```text
+demo/
+├── input/       # 01.png + 01.npz ... 10.png + 10.npz: ten matched input pairs
+├── run.py       # run this file
+└── output/      # initially empty; generated results go here
 ```
 
-Download the metadata BERT model once (approximately 440 MB), then use the supplied demo configs:
+After installing the environment, run from the repository root:
 
 ```bash
-python - <<'PY'
-from transformers import AutoTokenizer, AutoModel
-name = 'google-bert/bert-base-uncased'
-AutoTokenizer.from_pretrained(name).save_pretrained('models/bert')
-AutoModel.from_pretrained(name).save_pretrained('models/bert')
-PY
-CUDA_VISIBLE_DEVICES=0 FOCUS_NUM_WORKERS=0 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 python train.py --config demo/train.yaml
-CUDA_VISIBLE_DEVICES=0 OMP_NUM_THREADS=4 OPENBLAS_NUM_THREADS=4 MPLBACKEND=Agg python sample.py --config demo/test.yaml
+python demo/run.py
 ```
 
-Expected outputs are `logs_demo_two/Mouse_healthy_brain/10X/G*/model000001.pt` and
-`TEST_Result-demo/Mouse_healthy_brain/G0-5/`, containing two `prediction_*.npy` arrays of
-shape `(256, 256, 5)`, 20 ground-truth/prediction PNGs and a two-row `metrics.csv`.
-The arrays retain raw diffusion output; PNGs and metrics use per-gene min–max-scaled predictions.
-These diagnostic metrics are not held-out performance estimates.
+The script downloads the one-gene demo checkpoint once into `models/` outside the demo folder.
+For offline use, run `python demo/run.py --checkpoint /path/to/one_gene_checkpoint.pt`.
+It writes exactly one **single-channel float32 TIFF**, `01.tif` through `10.tif`, per input to
+`demo/output/`. Each image is 256×256 and retains the raw diffusion prediction, not transcript
+counts. No logs, metrics, ground-truth comparisons or checkpoints are written into that folder.
+The inputs and run file remain unchanged. Git cannot track an empty directory, so the script
+creates `output/` automatically; downloadable demo packages include the empty folder.
 
-On the tested CB4 system the two optimizer updates took about **4 seconds** inside the training
-loop; inference with `timestep_respacing: '4'` took **18.26 seconds**, including process startup,
-data/model loading and writing outputs. These are different timing boundaries. The default
-scientific inference config uses 400 reverse steps; the demo uses 4. Runtime on a normal desktop
-computer has **not been measured**. Results and timing can vary with random initialization and load.
+Each PNG is a real Xenium mouse-pup **H&E image** (256×256 RGB). Its same-name NPZ contains
+`low_res`, the **Ttn low-resolution ST map** `(1, 26, 26)`, together with the multi-scale H&E
+subpatches, masks, reference expression and other model conditions. The runner reads both files:
+the PNG supplies `WSI_5120`, and the NPZ supplies the expression and remaining conditions.
+Gene name, source tile, public source URL and limitations are embedded as text fields in the NPZ.
+The BERT metadata vector is precomputed, so this demo needs no separate BERT download.
+The single-gene checkpoint was trained for two optimizer updates and the demo uses four reverse
+diffusion steps. This verifies execution, not paper accuracy. The adult WMB midbrain reference is
+not matched to these mouse-pup tiles; masks are H&E threshold-component proxies, scGPT/GigaPath
+features are zeros, and the coexpression prior is from a single patch. Dataset source terms apply
+separately from the MIT code license. Use matched references and real encoder features for analysis.
+
+Runtime on a normal desktop computer has **not been measured**. The default scientific inference
+configuration uses 400 reverse steps; the small demo uses 4. On the CB4 system described above,
+all ten PNG/NPZ pairs completed in **11.32 seconds**, including startup, model loading and writing
+the ten TIFFs, with a local checkpoint already available (download time excluded).
 
 ### Generated channels
 
-`gene_num` controls the number of generated **gene-expression channels**. The supplied configs
-and the tested demo use **5**, producing `(batch, 5, 256, 256)` tensors. The U-Net output head has
-10 channels: five noise predictions plus five learned-variance predictions. The diffusion sampler
-returns five expression channels. H&E images have **3 RGB input channels**; their channel count
-does not specify the generation channel count. Each gene's expression map is a single scalar image,
-even when its preview is saved with a colour map. The tested checkpoint generates neither 1 nor 3
-expression channels. Changing `gene_num` requires a checkpoint trained with the corresponding shape.
+All supplied configurations use `gene_num: 1` and `all_gene: 1`: each run generates **one gene**,
+with tensors of shape `(batch, 1, 256, 256)`. The U-Net output head has two internal channels,
+one for noise and one for learned variance; the diffusion sampler returns **one expression channel**.
+H&E inputs retain their three RGB channels. The previous five-gene checkpoints are incompatible
+with the new one-gene model; use a checkpoint trained with the matching shape.
 
 ## Data Preparation
 
@@ -223,7 +215,7 @@ data_root/
 | `320_to16.npy` | `(256, 16, 16, 3)` uint8 | Multi-scale H&E sub-patches, sorted by complexity |
 | `cell_mask.npy` | `(256, 256, M)` | Cell segmentation masks |
 | `pre_he.npy` | `(3, 512)` | H&E features expected by `HEMatchingLayer` |
-| `scgpt_data/` | `(512, 26, 26)` for the active group | scGPT features expected by `STMatchingLayer`; default filename `1to5.npy` |
+| `scgpt_data/` | `(512, 26, 26)` for the active gene | scGPT features expected by `STMatchingLayer`; default filename `1to1.npy` |
 | `{scRNA_data}.h5ad` | AnnData | Single-cell reference, one `.h5ad` per tissue type |
 | `coexpression_matrix.npy` | `(K, K)` | Spatial gene–gene co-expression prior for the tissue |
 | `gene_order.npy` | `(G,)` int | Column indices into the platform's full gene panel |
@@ -352,8 +344,8 @@ Configure training parameters in `config/config_train.yaml`:
 
 ```yaml
 # Key parameters
-all_gene: 5          # Genes covered by one n-block (all_gene // gene_num groups)
-gene_num: 5          # Genes consumed per forward pass
+all_gene: 1          # One target gene
+gene_num: 1          # One generated expression channel
 batch_size: 8        # Training batch size
 SR_times: 10         # Super-resolution factor
 epoch: 3000          # Training epochs
@@ -383,7 +375,7 @@ python train.py
 Use a training batch and microbatch size of at least **2**: `ScalePredictionHead` contains
 `BatchNorm1d` after global pooling, which cannot train on a single example. Inference uses batch 1.
 The current loop defines `total_iterations = int(99 * epoch / batch_size) + 1` and runs steps
-`0..total_iterations` inclusive; `epoch: 0` therefore performs two optimizer updates in the demo.
+`0..total_iterations` inclusive; `epoch: 0` therefore performs two optimizer updates in a short validation run.
 
 Note that the per-group gene slicing is commented out in `train_part.py` (see
 [Registering a New Tissue Type](#registering-a-new-tissue-type)), so all groups in one run train on the
@@ -401,8 +393,8 @@ sampling_method: guided     # guided -> p_sample_loop; set to 'ddim' for ddim_sa
 timestep_respacing: '400'   # respaced reverse process
 clip_denoised: True
 SR_times: 10
-gene_num: 5
-all_gene: 5
+gene_num: 1
+all_gene: 1
 data_root: '/path/to/data/'
 ```
 

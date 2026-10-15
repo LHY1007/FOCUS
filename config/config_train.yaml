@@ -12,8 +12,8 @@ ema_rate: '0.9999'
 fp16_scale_growth: 0.001
 save_interval: 2000
 
-all_gene : 5
-gene_num : 5
+all_gene : 1
+gene_num : 1
 batch_size: 8
 SR_times: 10
 dataset_use : 'All'

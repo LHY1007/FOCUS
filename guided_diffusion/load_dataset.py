@@ -71,7 +71,7 @@ class Data_all(Dataset):
                  all_gene, gene_order, gene_name_order, pre_model_dir):
         self.data_root = data_root
         self.status = status
-        self.gene_num = int(gene_num) if gene_num is not None else 20
+        self.gene_num = int(gene_num) if gene_num is not None else 1
         if dataset_use == 'All':
             self.selected_classes = [c for c in self._ALL_CLASSES if os.path.isdir(os.path.join(data_root, c))]
         elif dataset_use in self._ALL_CLASSES:
@@ -426,7 +426,7 @@ def load_scgpt_embedding(scgpt_dir, gene_names):
             # 缺失则补零
             chunks.append(np.zeros_like(chunks[-1]) if chunks else None)
 
-    # The active five-gene group's STMatchingLayer input is (512, 26, 26).
+    # STMatchingLayer uses 512 feature channels, separate from the one target-gene channel.
     scgpt_full = np.concatenate(chunks, axis=0)
     return scgpt_full.astype(np.float32)
 

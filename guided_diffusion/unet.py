@@ -1523,7 +1523,7 @@ class CellCorrelationGraphEncoder(nn.Module):
 
 
 class CellFidelityConstraining(nn.Module):
-    def __init__(self, gene_num=20, feat_dim=64, radius=3):
+    def __init__(self, gene_num=1, feat_dim=64, radius=3):
         super().__init__()
         self.gene_num = gene_num
         self.feat_dim = feat_dim
