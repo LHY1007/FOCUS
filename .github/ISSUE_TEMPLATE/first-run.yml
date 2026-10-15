@@ -1,0 +1,53 @@
+name: First-run feedback
+description: Report how installation and the demo worked on your computer.
+title: "[First run] "
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Follow the installation and demo instructions in the README, then describe what happened below.
+        A failed installation or run is useful feedback too.
+  - type: dropdown
+    id: experience
+    attributes:
+      label: Have you used FOCUS before?
+      options:
+        - This is my first time using FOCUS.
+        - I have used FOCUS before.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: FOCUS version or commit
+      description: Use the release tag or the output of git rev-parse HEAD.
+    validations:
+      required: true
+  - type: textarea
+    id: computer
+    attributes:
+      label: Computer and software
+      description: Include the operating system, CPU, RAM, GPU, driver, Python and PyTorch versions.
+    validations:
+      required: true
+  - type: textarea
+    id: installation
+    attributes:
+      label: Installation
+      description: Give the commands, whether the environment was new, elapsed time and whether installation completed. Note whether downloads were included. Paste any error message.
+    validations:
+      required: true
+  - type: textarea
+    id: demo
+    attributes:
+      label: Demo run
+      description: Give the command, elapsed time and number of PNG and NPZ outputs. Note whether weight download was included. If you could not run the demo, explain where you stopped.
+    validations:
+      required: true
+  - type: textarea
+    id: instructions
+    attributes:
+      label: Instructions that need improvement
+      description: Mention any missing or unclear steps and any changes you needed to make.
+    validations:
+      required: false

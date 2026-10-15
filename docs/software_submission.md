@@ -31,12 +31,15 @@ Repository URL for the form: `https://github.com/LHY1007/FOCUS`.
 The corresponding-author name and manuscript pseudocode location must be confirmed by the authors.
 Do not tick items whose timing or manuscript evidence has not been established.
 
-Reference policies and examples:
+## Reference policies and examples
 
-- https://www.nature.com/documents/nr-software-policy.pdf
-- https://www.nature.com/documents/GuidelinesCodePublication.pdf
-- https://github.com/neurodata-papers/MGC (redirects to the archived `neurodata/mgcpy-old` example)
-- https://github.com/neurodata-papers/LOL
+- [Nature code and software submission checklist](https://www.nature.com/documents/nr-software-policy.pdf)
+- [Nature guidelines for authors submitting code and software](https://www.nature.com/documents/GuidelinesCodePublication.pdf)
+
+The checklist lists MGC and LOL as examples of well-structured software packages:
+
+- [MGC](https://github.com/neurodata/mgcpy-old): the original example now redirects to this archived repository.
+- [LOL](https://github.com/neurodata/lol): supervised dimensionality reduction.
 
 The reference layout includes legacy CI and publishing files. FOCUS keeps credential-free templates
 for those files, and uses GitHub Actions for package integrity. No PyPI upload, Netlify deployment,

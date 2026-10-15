@@ -203,6 +203,13 @@ tested run. The noisy predictions from two-update weights are not evidence of en
 See [docs/](docs/index.md) for input/output definitions, a source-aligned algorithm outline and
 [software-submission evidence](docs/software_submission.md). Contribution and release information
 are in [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
+
+If you are trying FOCUS for the first time, follow the installation and demo instructions above
+and share your results through the [first-run feedback form](https://github.com/LHY1007/FOCUS/issues/new?template=first-run.yml).
+The form asks about your computer, installation time, demo outputs and any unclear instructions.
+The example software packages listed in the Nature checklist are linked in
+[software-submission references](docs/software_submission.md#reference-policies-and-examples).
+
 GitHub Actions checks package integrity on CPU; it does not validate GPU inference or biology.
 The `.travis.yml`, `.pypirc` and `netlify.toml` files are optional, credential-free CI/publishing/
 hosting configurations. Including them does not publish or deploy anything.
