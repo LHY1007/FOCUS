@@ -21,6 +21,8 @@ data_preprocessing/
 │   ├── step6_extract_st_grids.py  # transcripts -> HR_ST and spot_ST grids
 │   ├── step7_stitch_preview.py    # low-resolution tiles -> slide preview
 │   └── step8_qc_tile.py           # per-tile H&E / expression check
+├── tests/
+│   └── test_preprocessing_fixes.py  # regression checks for the two fixed bugs
 └── xenium/
     ├── Xenium_pami.py   # Xenium: aligned H&E tiles + HR_ST and spot_ST grids
     ├── utils.py         # OME-TIFF affine warping, gradient magnitude, graph helpers
