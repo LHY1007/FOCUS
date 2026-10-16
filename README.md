@@ -151,7 +151,7 @@ matplotlib 3.10.9, h5py 3.16.0 and Pillow 12.2.0. The full environment is record
 
 The Windows installation was tested in a new Python **3.12.14** environment on an
 **ASUS TUF Gaming A15**, with an **AMD Ryzen 9 7940H**, **48 GB RAM** and
-**Windows 10 Pro for Workstations 22H2 (build 19045.5608)**. It used PyTorch
+**Windows 10**. It used PyTorch
 **2.9.0+cu126**, torchvision **0.24.0+cu126** and Intel MPI **2021.18.1**.
 Core installation took **14 min 31 s**, including package downloads and one download retry;
 Python, driver installation and model downloads were excluded. Core package versions are in
