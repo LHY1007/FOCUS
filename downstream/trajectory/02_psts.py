@@ -1,12 +1,18 @@
 """Run the stLearn PSTS trajectory for the osteogenic, adipogenic and
 chondrogenic lineages.
 
-The stLearn pipeline is reimplemented directly rather than called as a library:
-DBSCAN localisation of subclusters, PAGA, diffusion pseudotime, and the global
-pseudotime space, followed by a minimum spanning arborescence over the
-subcluster graph. Subcluster edges are weighted by a combination of expression
-distance and spatial distance, so the resulting pseudotime follows the tissue
-rather than only the transcriptome.
+The stLearn pipeline -- Pham et al., *Robust mapping of spatiotemporal
+trajectories and cell-cell interactions in healthy and diseased tissues*,
+Nat. Commun. 14, 7739 (2023) -- is reimplemented here directly rather than
+called as a library: DBSCAN localisation of subclusters, PAGA, diffusion
+pseudotime, and the global pseudotime space, followed by a minimum spanning
+arborescence over the subcluster graph. Subcluster edges are weighted by a
+combination of expression distance and spatial distance, so the resulting
+pseudotime follows the tissue rather than only the transcriptome.
+
+Being a reimplementation, it runs on any expression matrix, which is what lets
+the same code produce both the sensitivity-only arm (the stLearn baseline) and
+the FOCUS arm of the comparison.
 
 One trajectory is produced per lineage.
 """

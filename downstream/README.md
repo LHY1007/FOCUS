@@ -10,11 +10,28 @@ Their outputs are listed in section 7.
 
 ```
 downstream/
-├── deconvolution/     RCTD reference -> spatial deconvolution -> QC
-├── annotation/        coarse labels, and a Tangram-mapped reference
-├── matrix/            2 um bin -> cell x gene aggregation
+├── deconvolution/     RCTD reference -> spatial deconvolution -> QC   (baseline)
+├── annotation/        method 7 annotation, plus a Tangram baseline
+├── matrix/            Visium HD bin -> cell
 └── trajectory/        preprocessing, then PSTS trajectories
 ```
+
+## What each annotation route is for
+
+Two different things live in `annotation/` and `deconvolution/`, and they are not
+two attempts at the same step. The method section describes one annotation
+procedure; the other two are comparators it is benchmarked against.
+
+| Route | What it is | Where |
+| --- | --- | --- |
+| Scanpy clustering + Wilcoxon markers + manual annotation | **the annotation used for the results.** Highly variable genes, PCA, a kNN graph, UMAP and Leiden clustering, then `rank_genes_groups(method="wilcoxon")`; the cluster labels are assigned by hand from the ranked markers | [`annotation/scanpy_annotation.py`](annotation/scanpy_annotation.py) |
+| RCTD (Cable et al., 2022) | a **baseline comparator**, reproduced here. It deconvolves each spot against a scRNA-seq reference instead of clustering the section | [`deconvolution/`](deconvolution/) |
+| Tangram (Biancalani et al., 2021) | a **baseline comparator**, reproduced here. It maps a reference onto the section and is used as the sensitivity comparison | [`annotation/tangram_reference.py`](annotation/tangram_reference.py) |
+| `coarse_annotation.py` | builds the label vector for a section from the RCTD and geo-labelled sources. Part of the baseline route, not of the method | [`annotation/coarse_annotation.py`](annotation/coarse_annotation.py) |
+
+So the method route and the baseline route both exist and both run; they answer
+different questions. Nothing in `deconvolution/` feeds the annotation that the
+paper reports.
 
 ---
 
@@ -68,9 +85,10 @@ Input conditions:
 
 ---
 
-## 3. Deconvolution (`deconvolution/`)
+## 3. Deconvolution (`deconvolution/`) — baseline
 
-A standard three-step RCTD workflow. rctd-py in `doublet` mode builds one joint
+A standard three-step RCTD workflow, reproduced as a **comparator**, not as the
+annotation the results use. rctd-py in `doublet` mode builds one joint
 reference from the scRNA-seq atlases and fits it to the spatial data.
 
 | Step | Purpose |
@@ -108,12 +126,32 @@ setsid nohup python 02_run_deconvolution.py > output/run_02.log 2>&1 &
 
 ## 4. Annotation (`annotation/`)
 
-Two label sources for the same section.
+Two routes sit here. `scanpy_annotation.py` is the annotation procedure the
+results use; the other two scripts belong to the RCTD/Tangram baseline route.
 
-`coarse_annotation.py` builds the label vector: the YBM-reference RCTD result is
-taken first, the geo-labelled annotation fills the cells it did not cover, and
-whatever remains stays `Unassigned`. It writes the annotated object, the label
-table and the spatial map.
+### 4.1 The annotation procedure — `scanpy_annotation.py`
+
+The section is clustered and markers are ranked for manual assignment: highly
+variable genes, PCA, a kNN graph, UMAP and Leiden clustering, then
+`rank_genes_groups(method="wilcoxon")`. The output is the ranked marker table per
+cluster, plus the clustered object with the Leiden labels attached; the labels
+themselves are assigned by hand from those markers against canonical lineage and
+state markers.
+
+```bash
+cd downstream/annotation
+python scanpy_annotation.py --input <section>.h5ad --name 16-4-NC
+```
+
+### 4.2 The baseline route — `coarse_annotation.py`, `tangram_reference.py`
+
+Two label sources for the same section, used to build the RCTD/Tangram
+comparison.
+
+`coarse_annotation.py` builds a label vector from the baseline sources: the
+YBM-reference RCTD result is taken first, the geo-labelled annotation fills the
+cells it did not cover, and whatever remains stays `Unassigned`. It writes the
+annotated object, the label table and the spatial map.
 
 `tangram_reference.py` addresses the two classes the YBM reference cannot
 resolve. A T2DM scRNA-seq reference is mapped onto the section with Tangram, but

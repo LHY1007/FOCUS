@@ -344,10 +344,15 @@ exists, and that produce the cell-type and trajectory results reported in the pa
 
 | Analysis | Path | What it does |
 | --- | --- | --- |
-| Deconvolution | [`downstream/deconvolution/`](downstream/deconvolution/) | builds a shared scRNA-seq reference, runs RCTD in doublet mode, then checks composition, markers and agreement against an independent run |
-| Annotation | [`downstream/annotation/`](downstream/annotation/) | combines the RCTD call with the geo-labelled annotation and supplements the classes the reference cannot resolve via a Tangram-mapped T2DM reference |
+| Annotation | [`downstream/annotation/scanpy_annotation.py`](downstream/annotation/scanpy_annotation.py) | **the annotation the results use**: highly variable genes, PCA, a kNN graph, UMAP and Leiden clustering, then Wilcoxon marker ranking for manual assignment |
+| Deconvolution | [`downstream/deconvolution/`](downstream/deconvolution/) | **baseline replica**: builds a shared scRNA-seq reference and runs RCTD in doublet mode, then checks composition, markers and agreement against an independent run |
+| Tangram baseline | [`downstream/annotation/tangram_reference.py`](downstream/annotation/tangram_reference.py) | **baseline replica**: maps a T2DM reference onto the section for the sensitivity comparison |
 | Bin-to-cell matrix | [`downstream/matrix/bin2cell.py`](downstream/matrix/bin2cell.py) | aggregates Visium HD 2 µm bins into segmented nuclei with an STRtree point-in-polygon query |
-| Trajectory inference | [`downstream/trajectory/`](downstream/trajectory/) | preprocesses and scores the section, then runs the stLearn PSTS trajectory for the osteogenic, adipogenic and chondrogenic lineages |
+| Trajectory inference | [`downstream/trajectory/`](downstream/trajectory/) | preprocesses and scores the section, then runs the stLearn PSTS trajectory (reimplemented) for the osteogenic, adipogenic and chondrogenic lineages |
+
+The annotation route and the baseline route are separate: the RCTD and Tangram code answers the
+benchmark comparisons, and nothing in `downstream/deconvolution/` feeds the annotation reported in
+the paper. [`downstream/README.md`](downstream/README.md) spells out which is which.
 
 These scripts are independent of training: they read the project's intermediate objects and write to
 their own `output/` directories. Inputs, environment, run order and the known limits of each analysis
