@@ -2,8 +2,8 @@
 
 Run `python demos/run.py` from a source checkout with the dependencies installed and a CUDA GPU.
 The script reads ten same-name pairs from `demos/input/` and creates `demos/output/` if needed.
-The checkpoint is downloaded to `models/` on the first run. Use `--checkpoint /path/to/model.pt`
-for offline use with the Ttn demo checkpoint.
+The checkpoint is included at `demos/focus-ttn.pt` and read locally. Use
+`--checkpoint /path/to/model.pt` to select another compatible local checkpoint.
 
 ## One input pair
 

@@ -2,6 +2,7 @@
 
 ## Unreleased
 
+- Include the Ttn checkpoint in `demos/` and load it without a separate download.
 - Update the Ttn demo checkpoint, input examples and comparison figure.
 - Verify all ten demo inputs on a Windows RTX 4060 laptop and record the runtime.
 - Add Windows installation timings and package version records.

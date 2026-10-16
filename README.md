@@ -34,7 +34,7 @@ FOCUS/
 ├── pyproject.toml / MANIFEST.in # build backend and source-package contents
 ├── CONTRIBUTING.md / CHANGELOG.md
 ├── Dockerfile                   # CUDA container recipe
-├── demos/                       # input/, run.py, empty output/
+├── demos/                       # input/, run.py, focus-ttn.pt, empty output/
 ├── docs/                        # usage, algorithm outline and tested environments
 ├── hooks/ / install-hooks.sh    # optional local whitespace check
 ├── FOCUS.png / demo_results.png # method overview and demo results
@@ -177,6 +177,7 @@ The root-level [`demos/`](demos/) has only these items:
 demos/
 ├── input/       # 01.png + 01.npz ... 10.png + 10.npz: ten matched input pairs
 ├── run.py       # run this file
+├── focus-ttn.pt # pretrained Ttn weights
 └── output/      # initially empty; generated results go here
 ```
 
@@ -186,9 +187,8 @@ After installing the environment, run from the repository root:
 python demos/run.py
 ```
 
-The script downloads the pretrained Ttn checkpoint once into `models/` outside the demo folder.
-For offline use, download the [Ttn checkpoint](https://github.com/LHY1007/FOCUS/releases/tag/ttn-demo-v2)
-and run `python demos/run.py --checkpoint /path/to/focus-ttn.pt`.
+The pretrained Ttn checkpoint is included at `demos/focus-ttn.pt`. The script reads it directly;
+no separate model download is needed after cloning the repository.
 It writes one **grayscale PNG preview and one compressed float32 NPZ**, `01.png` + `01.npz`
 through `10.png` + `10.npz`, to `demos/output/`. The NPZ key `prediction` is a single-channel
 256×256 normalized expression map with values in `[0, 1]`. The PNG displays the same values
@@ -208,7 +208,7 @@ Dataset source terms apply separately from the MIT code license.
 
 On the Windows laptop described above, all ten input pairs completed in **30.91 seconds**.
 On CB4, they took **19.36 seconds**. Both measurements include process startup, model loading,
-inference and writing ten PNGs and ten NPZs, with the checkpoint already downloaded.
+inference and writing ten PNGs and ten NPZs, with the checkpoint available locally.
 These are single-run measurements; runtime depends on the computer and sampling settings.
 
 ![Demo results](demo_results.png)

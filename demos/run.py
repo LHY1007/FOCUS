@@ -1,7 +1,7 @@
 """Run: python demos/run.py
 
 Read ten input PNG/NPZ pairs; write one PNG preview and one float32 NPZ per pair.
-The checkpoint is downloaded once to ../models/, outside this demo folder.
+The Ttn checkpoint is included beside this script.
 The README describes the checkpoint and conditioning inputs used in this demo.
 """
 import sys
@@ -12,7 +12,6 @@ import hashlib
 import os
 from pathlib import Path
 from types import SimpleNamespace
-from urllib.request import urlopen
 
 os.environ.setdefault('MPLBACKEND', 'Agg')
 os.environ.setdefault('OMP_NUM_THREADS', '4')
@@ -27,7 +26,6 @@ import torch
 import yaml
 from guided_diffusion.script_util import sr_create_model_and_diffusion
 
-MODEL_URL = 'https://github.com/LHY1007/FOCUS/releases/download/ttn-demo-v2/focus-ttn.pt'
 MODEL_SHA256 = '2b656acde5e7455efa4356285bfeab459ac7e70890bfeeb6ca7cc853de88a21c'
 KEYS = ('low_res', 'WSI_320', 'gene_class', 'Gene_index_map',
         'metadata_feature', 'scale_gt', 'co_expression', 'WSI_mask', 'sc', 'scgpt', 'pre_he')
@@ -47,20 +45,9 @@ def checkpoint_path(override):
         if not path.is_file():
             raise FileNotFoundError(path)
         return path
-    path = ROOT/'models'/'focus-ttn.pt'
-    path.parent.mkdir(parents=True, exist_ok=True)
-    if not path.exists():
-        print('Downloading the one-gene demo checkpoint (about 70 MB)...', flush=True)
-        part = path.with_suffix('.part')
-        try:
-            with urlopen(MODEL_URL, timeout=60) as source, part.open('wb') as target:
-                while chunk := source.read(1024 * 1024):
-                    target.write(chunk)
-            if checksum(part) != MODEL_SHA256:
-                raise RuntimeError('Checkpoint checksum mismatch')
-            part.replace(path)
-        finally:
-            part.unlink(missing_ok=True)
+    path = DEMO/'focus-ttn.pt'
+    if not path.is_file():
+        raise FileNotFoundError(path)
     if checksum(path) != MODEL_SHA256:
         raise RuntimeError(f'Checkpoint checksum mismatch: {path}')
     return path
@@ -68,7 +55,7 @@ def checkpoint_path(override):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--checkpoint', help='Optional local one-gene checkpoint for offline use')
+    parser.add_argument('--checkpoint', help='Use another local one-gene checkpoint')
     cli = parser.parse_args()
     if not torch.cuda.is_available():
         raise RuntimeError('FOCUS currently requires an NVIDIA CUDA GPU.')
