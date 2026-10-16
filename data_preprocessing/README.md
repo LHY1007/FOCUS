@@ -21,6 +21,10 @@ data_preprocessing/
 │   ├── step6_extract_st_grids.py  # transcripts -> HR_ST and spot_ST grids
 │   ├── step7_stitch_preview.py    # low-resolution tiles -> slide preview
 │   └── step8_qc_tile.py           # per-tile H&E / expression check
+├── histology/
+│   └── stardist_segmentation.py   # H&E -> nuclei -> non-overlapping cell masks
+├── tests/
+│   └── test_segmentation.py       # geometry checks for the segmentation helpers
 └── xenium/
     ├── Xenium_pami.py   # Xenium: aligned H&E tiles + HR_ST and spot_ST grids
     ├── utils.py         # OME-TIFF affine warping, gradient magnitude, graph helpers
@@ -221,17 +225,8 @@ Two progress bars appear: `Processing WSI` then `Processing Spot-ST`. Both loops
 
 ### 3.6 Caveats
 
-- **`import json2`** at the top of `visium.py` is not a PyPI package; it is a local helper that must
-  expose `load_file(path)`. If you do not have it, either drop a `json2.py` next to the script:
-
-  ```python
-  import json
-  def load_file(path):
-      with open(path) as fh:
-          return json.load(fh)
-  ```
-
-  or replace the two uses with `json.load(open(...))`.
+- The scale factors are read with the standard library `json` module; an earlier revision used a local
+  `json2` helper that had to be present next to the script. Nothing extra needs to be installed now.
 - `MPP` is derived from the spot diameter, so it is only correct for a standard 6.5 mm Visium slide.
   For VisiumHD or a custom capture area, set `MPP` directly from the vendor's pixel size instead.
 - The WSI loop is parallel and each worker reads from the pre-resized in-memory `im`, which is why the
@@ -596,12 +591,12 @@ auto-detected (`x_location` / `y_location` / one of `gene_symbol`, `gene`, `feat
 
 ### 5.8 Caveats
 
-- **Blank tiles crash the H&E pass.** If no 320 x 320 sub-patch passes the gradient/brightness filter,
-  `rgba_image_320_save` is never assigned and the `WSI_320.shape[0]` line raises `UnboundLocalError`.
-  Guard the block with `if count == 0: continue` when processing slides with large empty regions.
-- **`shutil` is used but not imported** in the `remove_all_file` defined inside `Xenium_pami.py`
-  (it only triggers when a nested directory is found). Add `import shutil` at the top, or use the
-  `remove_all_file` from `utils.py`, which has no such branch.
+- **Blank tiles are skipped rather than crashing.** When no 320 x 320 sub-patch passes the
+  gradient/brightness filter the tile has no sub-patch stack, and the H&E pass leaves it unwritten
+  instead of dereferencing an unassigned array. Such a tile then has no `WSI/` patch, which is the
+  correct outcome: there is nothing to pair with an ST grid.
+- `remove_all_file` inside `Xenium_pami.py` recurses into nested directories with `shutil.rmtree`; the
+  module imports `shutil` for that.
 - `utils.py` here defines `warpAffine_new` **and** `warpAffine_new1` (the tiled version) plus several
   debug `print` calls inside `warpAffine_new`. The prints are harmless but very chatty on large images.
 - `spotst_rela_wsi_mpp = 200` gives 100 um bins and `st_rela_wsi_mpp = 20` gives 10 um bins; changing
@@ -646,7 +641,7 @@ this folder:
 
 | File | Produced by |
 | --- | --- |
-| `cell_mask.npy` | cell segmentation on the H&E tile (e.g. CellViT / StarDist) |
+| `cell_mask.npy` | `histology/stardist_segmentation.py` -- StarDist2D nuclei, grown into non-overlapping cell masks |
 | `pre_he.npy` | [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) H&E features, 512-dim |
 | `scgpt_data/` | [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per gene group |
 | `sc/{scRNA_data}.h5ad` | the matched single-cell reference for the tissue |

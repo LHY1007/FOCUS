@@ -321,7 +321,7 @@ Steps that are *not* in `data_preprocessing/` and must be run separately:
 
 | File | Produced by |
 | --- | --- |
-| `cell_mask.npy` | cell segmentation on the H&E patch (e.g. CellViT / StarDist) |
+| `cell_mask.npy` | [`data_preprocessing/histology/stardist_segmentation.py`](data_preprocessing/histology/stardist_segmentation.py) |
 | `pre_he.npy` | [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) H&E features |
 | `scgpt_data/` | [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) gene-expression embeddings |
 | `coexpression_matrix.npy` | spatial gene–gene co-expression computed across the cohort |

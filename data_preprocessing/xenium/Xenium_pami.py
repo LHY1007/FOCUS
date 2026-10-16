@@ -1,6 +1,8 @@
 #%%
 import matplotlib.pyplot as plt
 import numpy as np
+import os
+import shutil
 from pathlib import Path
 import pathlib
 from utils import *
@@ -118,6 +120,12 @@ for i in range(np.int64(img_w / int(crop_pixel/2)-1)):
                         else:
                             rgba_image_320_save = np.concatenate((rgba_image_320_save, im0), axis=0)
                         count += 1
+
+        if count == 0:
+            # No sub-patch passed the tissue filter, so rgba_image_320_save was
+            # never assigned. Leave the tile unwritten rather than raising here:
+            # a blank tile has no H&E patch to pair with an ST grid.
+            continue
 
         ### generate WSI_320_to_16
         WSI_320_to16=[]
