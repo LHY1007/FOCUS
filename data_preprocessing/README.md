@@ -22,7 +22,7 @@ data_preprocessing/
 │   ├── step7_stitch_preview.py    # low-resolution tiles -> slide preview
 │   └── step8_qc_tile.py           # per-tile H&E / expression check
 ├── histology/
-│   └── stardist_segmentation.py   # H&E -> nuclei -> non-overlapping cell masks
+│   └── stardist_segmentation.py   # H&E -> nuclei -> non-overlapping cell segmentation map
 ├── tests/
 │   └── test_segmentation.py       # geometry checks for the segmentation helpers
 └── xenium/
@@ -641,7 +641,7 @@ this folder:
 
 | File | Produced by |
 | --- | --- |
-| `cell_mask.npy` | `histology/stardist_segmentation.py` -- StarDist2D nuclei, grown into non-overlapping cell masks |
+| `cell_mask.npy` | derived from the segmentation map written by `histology/stardist_segmentation.py` |
 | `pre_he.npy` | [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) H&E features, 512-dim |
 | `scgpt_data/` | [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per gene group |
 | `sc/{scRNA_data}.h5ad` | the matched single-cell reference for the tissue |
