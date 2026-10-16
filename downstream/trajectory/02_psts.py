@@ -32,8 +32,8 @@ OUT = f'{BASE}/downstream/trajectory/output'
 FIG = f'{OUT}/figures'
 
 # Input of this step: the scored section subsampled to 50k cells with k-means
-# clusters. It is produced outside this folder.
-IN_H5AD = f'{BASE}/xiao/psts_results/nc_psts_trajectory.h5ad'
+# clusters, written by 00_subsample.py.
+IN_H5AD = f'{OUT}/nc_psts_trajectory.h5ad'
 
 print("Loading data...")
 adata_full = ad.read_h5ad(IN_H5AD)
