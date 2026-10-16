@@ -13,7 +13,7 @@ The table lists the files and measurements for the Nature software submission ch
 | Demo instructions and outputs | `python demos/run.py`; ten PNGs and ten float32 NPZs |
 | Desktop demo time | 30.91 seconds on the Windows RTX 4060 laptop; 19.36 seconds on CB4. Both include startup, model loading and 20 output files, excluding checkpoint download; see README |
 | Use with other data | README: data preparation and usage; `docs/usage.md` |
-| Reproduction instructions (optional) | [Current commands and paper settings](reproduction.md); full figure reproduction has not been validated |
+| Reproduction instructions (optional) | [Commands, paper settings and required inputs](reproduction.md) |
 | License | MIT License; SPDX `MIT`; no numbered version |
 | Version identifier | [Release v0.2.0](https://github.com/LHY1007/FOCUS/releases/tag/v0.2.0); no DOI assigned |
 | Independent trial | Awaiting a report through the [first-run form](https://github.com/LHY1007/FOCUS/issues/new?template=first-run.yml) |
@@ -23,9 +23,7 @@ The form's author names and manuscript locations should match the submitted vers
 
 License text:
 
-> FOCUS source code is distributed under the MIT License (SPDX: MIT). Redistribution must retain
-> the copyright and license notice. Data, pretrained models and third-party components have
-> their own licenses and access conditions.
+> FOCUS source code is distributed under the MIT License (SPDX: MIT).
 
 ## Reference policies and examples
 

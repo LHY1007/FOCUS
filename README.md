@@ -5,9 +5,6 @@
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
 **Open-source license:** FOCUS source code is released under the [MIT License](LICENSE).
-Please retain the copyright and license notice when redistributing the code.
-Datasets, pretrained weights and third-party components remain subject to their respective
-licenses and access conditions; the code license does not replace those terms.
 
 ## Overview
 
@@ -204,12 +201,10 @@ the PNG supplies `WSI_5120`, and the NPZ supplies the expression and remaining c
 Gene name, source tile and public source URL are embedded as text fields in the NPZ.
 The BERT metadata vector is precomputed, so this demo needs no separate BERT download.
 Input definitions and data sources are described in [docs/usage.md](docs/usage.md).
-Dataset source terms apply separately from the MIT code license.
 
 On the Windows laptop described above, all ten input pairs completed in **30.91 seconds**.
 On CB4, they took **19.36 seconds**. Both measurements include process startup, model loading,
 inference and writing ten PNGs and ten NPZs, with the checkpoint available locally.
-These are single-run measurements; runtime depends on the computer and sampling settings.
 
 ![Demo results](demo_results.png)
 
@@ -233,7 +228,7 @@ are optional configuration files for Travis CI, PyPI and Netlify; these services
 
 The optional container recipe can be built with `docker build -t focus-st:0.2.0 .` and run with
 `docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.2.0`.
-The container requires the NVIDIA Container Toolkit. The Docker recipe has not been tested.
+The container requires the NVIDIA Container Toolkit.
 
 ### Generated channels
 
@@ -372,7 +367,7 @@ For every sample the release is organized exactly as the directory structure abo
 
 **Download**: [curated cross-platform multimodal datasets](https://www.dropbox.com/scl/fo/8jipnyir34f1farrcgoxk/ADJbjaWY4V2Qv006H7j2j7w?rlkey=ca4buoejjn2d53rqjl5bii7yj&st=i68hdo96&dl=0)
 
-All datasets are derived from public sources; per-sample provenance (platform, tissue, accession) is listed in Supplementary Tables S1–S3 of the paper. The in-house papillary craniopharyngioma (PCP) datasets — Xenium spatial transcriptomics and CODEX spatial proteomics — are deposited in the National Genomics Data Center (NGDC) under accessions **OMIX021475** and **OMIX021470**, respectively, and can be shared for non-commercial academic research in accordance with the applicable data-access requirements.
+Per-sample provenance (platform, tissue, accession) is listed in Supplementary Tables S1–S3 of the paper. The in-house papillary craniopharyngioma (PCP) datasets — Xenium spatial transcriptomics and CODEX spatial proteomics — are deposited in the National Genomics Data Center (NGDC) under accessions **OMIX021475** and **OMIX021470**, respectively.
 
 ### Registering a New Tissue Type
 

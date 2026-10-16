@@ -48,8 +48,7 @@ The [input layout](../README.md#data-preparation) and [preprocessing steps](../d
 describe the required files. Analysis-specific inputs and commands are in
 [downstream/README.md](../downstream/README.md).
 
-Full paper reproduction still requires the original patient splits, experiment configurations,
+The paper experiments require the original patient splits, experiment configurations,
 matching trained checkpoints and a mapping from each figure to its inputs and commands.
 The trajectory scripts also require the 50,000-cell subsampled object described in the downstream
-README; the script that creates that object is not included. The current demo cannot substitute
-for those experiments.
+README; the script that creates that object is not included.

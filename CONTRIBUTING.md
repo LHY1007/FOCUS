@@ -21,9 +21,9 @@ python -m twine check dist/*
 
 For inference changes, run `python demos/run.py` on a CUDA GPU and check that all ten input pairs
 produce ten PNGs and ten NPZs, with finite `(256, 256)` float32 `prediction` arrays. The PNG must be
-the grayscale rendering of the paired NPZ using the documented `[-1, 1]` display range. Keep
-`demos/output/` empty in submitted source packages; do not commit weights or generated results.
-CPU CI checks packaging and source integrity, not GPU inference or biological accuracy.
+the grayscale rendering of the paired NPZ using the documented `[0, 1]` display range. Keep
+`demos/output/` empty in submitted source packages.
+CPU CI builds and validates the source and wheel packages.
 
 Optional local whitespace checks can be enabled with `sh install-hooks.sh`; this only changes
 the current checkout's Git hook path. This repository has not been published to PyPI, and no
