@@ -12,7 +12,7 @@ import numpy as np
 from torchvision.utils import make_grid
 from skimage.metrics import peak_signal_noise_ratio, structural_similarity
 import sys
-sys.path.append('/home/zeiler/MIA/Diffusion-ST/')
+
 import guided_diffusion.gaussian_diffusion as gd
 from guided_diffusion.respace import SpacedDiffusion, space_timesteps
 from guided_diffusion.unet import UNetModel
@@ -77,6 +77,9 @@ def sr_create_model_and_diffusion(args):
         resblock_updown=args.resblock_updown,
         use_fp16=args.use_fp16,
         root=args.data_root,
+        manuscript_mode=getattr(args, "manuscript_mode", True),
+        he_feature_dim=getattr(args, "he_feature_dim", 1536),
+        st_feature_dim=getattr(args, "st_feature_dim", 512),
     )
     diffusion = create_gaussian_diffusion(
         steps=args.diffusion_steps,
@@ -88,6 +91,16 @@ def sr_create_model_and_diffusion(args):
         rescale_learned_sigmas=args.rescale_learned_sigmas,
         timestep_respacing=args.timestep_respacing,
     )
+    diffusion.manuscript_mode = getattr(args, "manuscript_mode", True)
+    diffusion.loss_weights = tuple(getattr(args, k, v) for k, v in zip(
+        ("lambda_charb", "lambda_struct", "lambda_dis", "lambda_consis"), (0.15, 0.20, 0.10, 0.10)))
+    diffusion.charbonnier_gamma = getattr(args, "charbonnier_gamma", 1e-4)
+    if model.manuscript_mode:
+        names = ("sensitivity", "alignment", "cell_fidelity")
+        enabled = getattr(args, "tasks", ",".join(names)).split(",")
+        if set(enabled) - set(names) - {""}:
+            raise ValueError("Unknown task name")
+        model.manuscript.allowed_tasks = tuple(n in enabled for n in names)
     return model, diffusion
 
 def sr_create_model(
@@ -107,6 +120,9 @@ def sr_create_model(
         resblock_updown,
         use_fp16,
 root,
+        manuscript_mode=True,
+        he_feature_dim=1536,
+        st_feature_dim=512,
 ):
     # channel_mult = (1, 1, 2, 2, 3, 3)
     channel_mult = (1, 1, 1)
@@ -127,7 +143,11 @@ root,
         use_scale_shift_norm=use_scale_shift_norm,
         resblock_updown=resblock_updown,
         use_fp16=use_fp16,
-        root=root
+        root=root,
+        manuscript_mode=manuscript_mode,
+        learn_sigma=learn_sigma,
+        he_feature_dim=he_feature_dim,
+        st_feature_dim=st_feature_dim,
     )
 
 

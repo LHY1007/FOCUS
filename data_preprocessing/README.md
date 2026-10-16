@@ -640,7 +640,8 @@ this folder:
 | File | Produced by |
 | --- | --- |
 | `cell_mask.npy` | cell segmentation on the H&E patch; see [`../downstream/matrix/bin2cell_pipeline.py`](../downstream/matrix/bin2cell_pipeline.py) |
-| `pre_he.npy` | [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) H&E features, 512-dim |
+| `pre_he.npy` | [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) tile features, 257 vectors of 1536 dimensions; export with `export_conditioning.py` |
+| `complexity_grid.npy` | Density and native morphology scored from registered H&E plus existing cell-instance labels with `score_complexity.py`; this does not generate masks |
 | `scgpt_data/` | [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per gene group |
 | `sc/{scRNA_data}.h5ad` | the matched single-cell reference for the tissue |
 | `coexpression_matrix.npy` | spatial gene-gene co-expression computed across the cohort |
@@ -649,6 +650,5 @@ this folder:
 Cell-type annotation, deconvolution and trajectory inference are also outside this folder and are
 documented in [`../downstream/README.md`](../downstream/README.md).
 
-Processed cross-platform multimodal data are also available. See the
-[Curated Cross-platform Multimodal Dataset](../README.md#curated-cross-platform-multimodal-dataset)
-section of the main README.
+The authors' external data link and the complete loader input format are described in
+[the main README](../README.md#data-preparation).

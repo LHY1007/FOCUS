@@ -1,7 +1,6 @@
 """Gene-group training schedule for FOCUS.
 
-Trains the model one gene group at a time, resuming from the checkpoint of
-the previous group, and writes one checkpoint per group.  Called by `train.py`
+Trains independent five-gene groups and writes checkpoints for each. Called by `train.py`
 with the parameters assembled from `config/config_train.yaml`.
 """
 
@@ -20,99 +19,70 @@ from guided_diffusion.train_util import TrainLoop
 import numpy as np
 
 
-def train_fun(args,log_dir,n,pre_model_dir):
-    for i in range(args.all_gene//args.gene_num):
-        # Calculate the gene group range for this iteration
-        gene_start = (n-1)*args.all_gene+(i*args.gene_num)
-        gene_end = (n-1)*args.all_gene+((i+1)*args.gene_num)
-        
-        # Create the base directory path (without timestamp)
-        base_dir = log_dir + args.dataset_use + '/' + str(args.SR_times) + 'X' + '/G' + str(gene_start) + '-' + str(gene_end)
-        
-        # Check if this gene group has already been trained
-        already_trained = False
-        
-        # Look for existing directories matching this gene group pattern
-        if os.path.exists(log_dir + args.dataset_use + '/' + str(args.SR_times) + 'X/'):
-            print(log_dir + args.dataset_use + '/' + str(args.SR_times) + 'X/')
-            existing_dirs = [d for d in os.listdir(log_dir + args.dataset_use + '/' + str(args.SR_times) + 'X/')
-                            if d.startswith('G' + str(gene_start) + '-' + str(gene_end))]
-            
-            # Check each matching director
-            # y for PT files
-            for dir_name in existing_dirs:
-                full_dir_path = os.path.join(log_dir + args.dataset_use + '/' + str(args.SR_times) + 'X/', dir_name)
-
-                if os.path.isdir(full_dir_path):
-                    # Get all PT files in this directory
-                    pt_files = [f for f in os.listdir(full_dir_path) if f.endswith('.pt')]
-                    
-                                    # Check if any PT file has non-zero last three digits
-                    import re
-                    for pt_file in pt_files:
-
-                        # Extract the model number from filename (assuming format like "model019802.pt")
-                        match = re.search(r'model(\d+)\.pt', pt_file)
-                        if match:
-                            model_num = match.group(1)
-                            # Check if the last three digits are not all zeros
-                            if model_num[-3:] != '000':
-                                already_trained = True
-                                logger.log(f"Skipping gene group G{gene_start}-{gene_end} as it has a completed model file ({pt_file}) in {full_dir_path}")
-                                break
-                    
-        if already_trained:
+def train_fun(args, log_dir, n, pre_model_dir):
+    import torch
+    from pathlib import Path
+    from guided_diffusion.finetune import configure_finetuning
+    if args.all_gene <= 0 or args.gene_num <= 0 or args.all_gene % args.gene_num:
+        raise ValueError('all_gene must be a positive multiple of gene_num; define a separate config for a partial group')
+    seed = getattr(args, 'seed', 0)
+    torch.manual_seed(seed)
+    np.random.seed(seed)
+    random.seed(seed)
+    resume_group = None
+    if args.resume_checkpoint:
+        import re
+        match = re.match(r'^G(\d+)-(\d+)_', Path(args.resume_checkpoint).parent.name)
+        if not match:
+            raise ValueError('Resume checkpoint must live in its Gstart-end training directory')
+        resume_group = (int(match.group(1)), int(match.group(2)))
+        first = (n - 1) * args.all_gene
+        if (resume_group[0] < first or resume_group[1] > first + args.all_gene or
+                resume_group[1] - resume_group[0] != args.gene_num or
+                (resume_group[0] - first) % args.gene_num):
+            raise ValueError('Resume checkpoint gene range is outside the requested groups')
+    for i in range(args.all_gene // args.gene_num):
+        gene_start = (n - 1) * args.all_gene + i * args.gene_num
+        gene_end = gene_start + args.gene_num
+        if resume_group and gene_start < resume_group[0]:
             continue
-        
-        # Otherwise, proceed with training
-        loop_start_time = time.time()
-        # gene_order = np.load(gene_order_path)[gene_start:gene_end]
-        # gene_name_order = np.loadtxt(genename_path,dtype=str)[gene_start:gene_end]
-        # Create new directory with timestamp
-        cur_time = time.strftime('%m%d-%H%M', time.localtime())
-        save_dir = base_dir + '_{}'.format(cur_time)
-        logger.configure(dir=save_dir+'/')
-
-        logger.log(f"Training gene group G{gene_start}-{gene_end}...")
-        logger.log("creating data loader...")
-        # Load the super-resolution dataset
-        brain_dataset = load_superres_data(args.data_root, args.dataset_use, status='Train', SR_times=args.SR_times,
-                                        gene_num=args.gene_num, all_gene=args.all_gene, gene_order=0,gene_name_order=0,pre_model_dir=pre_model_dir)
-        
-        logger.log("creating model...")
+        if resume_group and gene_start == resume_group[0] and gene_end != resume_group[1]:
+            raise ValueError('Resume checkpoint gene range differs from the selected group')
+        resume_checkpoint = args.resume_checkpoint if resume_group == (gene_start, gene_end) else ''
+        stamp = time.strftime('%Y%m%d-%H%M%S') + f'-{time.time_ns() % 1000000000:09d}'
+        save_dir = Path(log_dir) / args.dataset_use / f'{args.SR_times}X' / f'G{gene_start}-{gene_end}_{stamp}'
+        logger.configure(dir=str(save_dir))
+        # Save the actual runtime configuration beside the checkpoint.
+        with (save_dir / 'config.yaml').open('w', encoding='utf-8') as f:
+            yaml.safe_dump({**vars(args), 'gene_start': gene_start}, f)
+        data = load_data(
+            data_root=args.data_root, dataset_use=args.dataset_use, status='Train',
+            SR_times=args.SR_times, gene_num=args.gene_num, all_gene=args.all_gene,
+            pre_model_dir=pre_model_dir, gene_start=gene_start,
+            split_manifest=args.split_manifest, split=args.split,
+            reference_cells=args.reference_cells, seed=seed)
         model, diffusion = sr_create_model_and_diffusion(args)
-
-        model.to(dist_util.dev())
-        # Create the schedule sampler based on the chosen method
-        schedule_sampler = create_named_schedule_sampler(args.schedule_sampler, diffusion)
-
-        logger.log("training...")
-        # Start the training loop
+        init = getattr(args, 'init_checkpoint', '')
+        if init:
+            model.load_state_dict(torch.load(init, map_location='cpu', weights_only=True), strict=True)
+        if getattr(args, 'finetune', False):
+            if not init and not resume_checkpoint:
+                raise ValueError('Fine-tuning requires init_checkpoint or an adapted resume_checkpoint')
+            count = configure_finetuning(model, getattr(args, 'lora_rank', 8))
+            logger.log(f'LoRA adapted {count} matrices; U-Net encoders are frozen')
+        model.to(dist_util.dev()).train()
+        schedule = create_named_schedule_sampler(args.schedule_sampler, diffusion)
         TrainLoop(
-            model=model,
-            diffusion=diffusion,
-            data=brain_dataset,
-            batch_size=args.batch_size,
-            microbatch=args.microbatch,
-            lr=args.lr,
-            ema_rate=args.ema_rate,
-            log_interval=args.log_interval,
-            save_interval=args.save_interval,
-            resume_checkpoint=args.resume_checkpoint,
-            use_fp16=args.use_fp16,
-            fp16_scale_growth=args.fp16_scale_growth,
-            schedule_sampler=schedule_sampler,
-            weight_decay=args.weight_decay,
-            lr_anneal_steps=args.lr_anneal_steps,
-            SR_times=args.SR_times,
-            epoch = args.epoch
-        ).run_loop()
-        
-        # Calculate and log the time taken for this loop
-        loop_duration = time.time() - loop_start_time
-        hours = int(loop_duration // 3600)
-        minutes = int((loop_duration % 3600) // 60)
-        logger.log(f"循环 {i} 完成，耗时: {hours}小时{minutes}分钟")
+            model=model, diffusion=diffusion, data=data, batch_size=args.batch_size,
+            microbatch=args.microbatch, lr=args.lr, ema_rate=args.ema_rate,
+            log_interval=args.log_interval, save_interval=args.save_interval,
+            resume_checkpoint=resume_checkpoint, use_fp16=args.use_fp16,
+            fp16_scale_growth=args.fp16_scale_growth, schedule_sampler=schedule,
+            weight_decay=args.weight_decay, lr_anneal_steps=args.lr_anneal_steps,
+            SR_times=args.SR_times, epoch=args.epoch, max_steps=getattr(args, 'max_steps', 0)).run_loop()
+        if getattr(args, 'finetune', False):
+            from guided_diffusion.finetune import merged_state_dict
+            torch.save(merged_state_dict(model), save_dir / 'merged.pt')
 
 def load_superres_data(data_root,dataset_use,status,SR_times,gene_num,all_gene,gene_order,gene_name_order,pre_model_dir):
     # Load the super-resolution data using the specified directories

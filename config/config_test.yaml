@@ -1,42 +1,50 @@
-# ---------------------------------------------------------------------------
-# FOCUS sampling / evaluation configuration
-#   read by sample.py (see README, section "Inference").
-# ---------------------------------------------------------------------------
+# Settings from the supplied final manuscript and Supplementary Table S9.
 attention_resolutions: 32,16,8
 base_samples: ''
 batch_size: 1
-clip_denoised: True
+clip_denoised: true
 data_dir: ''
 dropout: 0.0
-
-all_gene : 1
-gene_num : 1
+all_gene: 5
+gene_num: 5
 SR_times: 10
-dataset_use : 'All'
-epoch : 3000
-data_root : '/home/cbtil4/ST/datasets/demo/'
-log_dir : 'logs/'
-pre_model_dir  : '/model'
+dataset_use: All
+epoch: 2000
+data_root: data/prepared
+log_dir: logs/
+pre_model_dir: models
 diffusion_steps: 1000
-sampling_method: guided # guided
-
+sampling_method: ddpm
 num_channels: 128
 num_res_blocks: 1
-# model_path: /home/hanyu/JYX/logs_new/x10_Xenium_g10_outRelu_100_t2_0109-1050/model012000.pt
-
-learn_sigma: true
+learn_sigma: false
 noise_schedule: linear
 num_head_channels: 48
 num_heads: 4
 num_heads_upsample: -1
-#num_samples: 50000
 predict_xstart: false
 resblock_updown: true
 rescale_learned_sigmas: false
 rescale_timesteps: false
-timestep_respacing: '400'
+timestep_respacing: ''
 use_checkpoint: false
-
 use_fp16: false
 use_kl: false
 use_scale_shift_norm: true
+manuscript_mode: true
+split_manifest: data/samples.csv
+split: test
+reference_cells: 256
+seed: 0
+he_feature_dim: 1536
+st_feature_dim: 512
+tasks: sensitivity,alignment,cell_fidelity
+lambda_charb: 0.15
+lambda_struct: 0.2
+lambda_dis: 0.1
+lambda_consis: 0.1
+charbonnier_gamma: 0.0001
+finetune: false
+lora_rank: 8
+init_checkpoint: ''
+max_steps: 0

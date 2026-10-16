@@ -29,11 +29,13 @@ from mpi4py import MPI
 comm =MPI.COMM_WORLD
 rank = comm.Get_rank()
 gpu_ids = [0]
-torch.cuda.set_device(gpu_ids[rank])
+if torch.cuda.is_available():
+    torch.cuda.set_device(rank % torch.cuda.device_count())
 from train_part import train_fun
 def main():
     args = create_argparser().parse_args()
-    dist_util.setup_dist()
+    if comm.size != 1:
+        raise RuntimeError("This training entrypoint is single-process; do not launch unsynchronized multi-GPU jobs")
     train_fun(args,args.log_dir,args.n ,args.pre_model_dir)
 
 def create_argparser():

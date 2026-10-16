@@ -1,17 +1,11 @@
-"""Gaussian diffusion process for FOCUS.
+"""Gaussian diffusion for FOCUS.
 
-Wraps the standard forward / reverse process and defines the training
-objective used in the paper (Sec. 3.1, cross-platform training):
-
-    L = L_noise (smooth-L1) + L_disent + L_grad + L_scale
-        + L_gene_HE + L_OT + L_Constrained
-
-`training_losses` calls the conditional U-Net, receives the auxiliary outputs
-of the task-specific modules (disentangling terms, OT loss, cell-fidelity
-constraining loss, scale prediction) and assembles the weighted sum.
+The manuscript configuration trains with the four terms in Methods 3.1 and
+Supplementary Table S9: Charbonnier, structural, disentangling and cell
+consistency. The historical loss branch remains available for old checkpoints.
 """
 import sys
-sys.path.append('/home/zeiler/MIA/Diffusion-ST')
+
 import enum
 import math
 
@@ -342,7 +336,7 @@ class GaussianDiffusion:
         B, C = x.shape[:2]
         assert t.shape == (B,)
 
-        ratio = th.tensor(x) * 0 + 2.0
+        ratio = th.zeros_like(x) + 2.0
         x = th.cat((ratio, x), 1)
         flag = "train"
         model_output = model(x, self._scale_timesteps(t),  **model_kwargs)
@@ -969,14 +963,14 @@ class GaussianDiffusion:
                 terms["loss"] *= self.num_timesteps
 
         elif self.loss_type == LossType.MSE or self.loss_type == LossType.RESCALED_MSE:
-            if self.last_HQST_cache is None:
+            if getattr(self, "manuscript_mode", False) or self.last_HQST_cache is None:
                 last_HQST_input = torch.zeros_like(x_start)
             else:
                 last_HQST_input = self.last_HQST_cache.detach()
             model_kwargs = model_kwargs or {}
             model_kwargs["last_HQST"] = last_HQST_input
 
-            ratio = th.tensor(x_t) * 0 + ratio
+            ratio = th.zeros_like(x_t) + ratio
             x_t = th.cat((ratio, x_t), 1)
             (com_h1, com_h2, dist_h1, dist_h2,
             com_loss, attention_weights,Constrained_loss,L_ot,scale_pred, model_output) = model(
@@ -1026,24 +1020,34 @@ class GaussianDiffusion:
                 last_HQST = model_output.detach()
             self.last_HQST_cache = last_HQST.detach()
 
-            terms["gene_HE"] = 0.0001*self.compute_weighted_loss(model_output,target,attention_weights)
-            terms["Constrained"] = 0.0001*Constrained_loss
-            terms["ot"] = 0.00001*L_ot
-            terms["scale"] = 0.01  * F.l1_loss(scale_pred, scale_gt)
-            terms["mse"] = mean_flat(self.smooth_L1(target, model_output))
-
-            terms['com'] = mean_flat((com_h1 - com_h2) ** 2)
-            terms['dist'] = 0.01*mean_flat((dist_h1 - dist_h2) ** 2)
-            terms['grad'] = 0.001*com_loss
-
-
-            terms["disent"] = terms['com'] / terms['dist']
-            if "vb" in terms:
-                terms["loss"] = terms["mse"] + terms["disent"] + terms["vb"]+terms['grad']+terms["scale"]+terms['gene_HE']+terms["ot"]+terms['Constrained']
-
+            if getattr(self, "manuscript_mode", False):
+                gamma = self.charbonnier_gamma
+                terms["charb"] = mean_flat(torch.sqrt((model_output - target).square() + gamma ** 2))
+                terms["struct"] = com_loss
+                shared = F.cosine_similarity(com_h1.flatten(1), com_h2.flatten(1), dim=1)
+                unique = F.cosine_similarity(dist_h1.flatten(1), dist_h2.flatten(1), dim=1)
+                terms["dis"] = -shared + unique
+                terms["consis"] = Constrained_loss
+                terms["loss"] = sum(w * terms[k] for w, k in zip(
+                    self.loss_weights, ("charb", "struct", "dis", "consis")))
             else:
-                terms["loss"] = terms["mse"] + terms["disent"]+terms['grad']
-
+                terms["gene_HE"] = 0.0001*self.compute_weighted_loss(model_output,target,attention_weights)
+                terms["Constrained"] = 0.0001*Constrained_loss
+                terms["ot"] = 0.00001*L_ot
+                terms["scale"] = 0.01  * F.l1_loss(scale_pred, scale_gt)
+                terms["mse"] = mean_flat(self.smooth_L1(target, model_output))
+    
+                terms['com'] = mean_flat((com_h1 - com_h2) ** 2)
+                terms['dist'] = 0.01*mean_flat((dist_h1 - dist_h2) ** 2)
+                terms['grad'] = 0.001*com_loss
+    
+    
+                terms["disent"] = terms['com'] / terms['dist']
+                if "vb" in terms:
+                    terms["loss"] = terms["mse"] + terms["disent"] + terms["vb"]+terms['grad']+terms["scale"]+terms['gene_HE']+terms["ot"]+terms['Constrained']
+    
+                else:
+                    terms["loss"] = terms["mse"] + terms["disent"]+terms['grad']
         else:
             raise NotImplementedError(self.loss_type)
 

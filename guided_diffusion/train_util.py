@@ -77,7 +77,8 @@ class TrainLoop:
         weight_decay=0.0,
         lr_anneal_steps=0,
         SR_times=10,
-        epoch=1000
+        epoch=1000,
+        max_steps=0
     ):
         # ==================== 基本参数 ====================
         self.model = model
@@ -90,6 +91,7 @@ class TrainLoop:
         self.lr_anneal_steps = lr_anneal_steps
         self.SR_times = SR_times
         self.epoch = epoch
+        self.max_steps = int(max_steps)
         
         # ==================== 训练状态 ====================
         self.step = 0
@@ -110,11 +112,6 @@ class TrainLoop:
         # ==================== 混合精度训练 ====================
         self.use_fp16 = use_fp16
         self.fp16_scale_growth = fp16_scale_growth
-        self.mp_trainer = MixedPrecisionTrainer(
-            model=self.model,
-            use_fp16=self.use_fp16,
-            fp16_scale_growth=fp16_scale_growth,
-        )
         
         # ==================== 采样器 ====================
         self.schedule_sampler = schedule_sampler or UniformSampler(diffusion)
@@ -125,6 +122,11 @@ class TrainLoop:
         
         # ==================== 加载模型和优化器 ====================
         self._load_parameters()
+        self.mp_trainer = MixedPrecisionTrainer(
+            model=self.model,
+            use_fp16=self.use_fp16,
+            fp16_scale_growth=fp16_scale_growth,
+        )
         
         print(f'Number of Trainable Parameters: {count_parameters(model)}')
         
@@ -133,6 +135,8 @@ class TrainLoop:
             lr=self.lr,
             weight_decay=self.weight_decay
         )
+        if self.resume_checkpoint:
+            self._load_optimizer_state()
         
         # 不使用 DDP 包装
         self.ddp_model = self.model
@@ -145,24 +149,28 @@ class TrainLoop:
         resume_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
         
         if resume_checkpoint:
-            self.resume_step = parse_resume_step_from_filename(resume_checkpoint)
+            self.step = parse_resume_step_from_filename(resume_checkpoint)
+            if self.step <= 0:
+                raise ValueError('Resume checkpoint must be named modelNNNNNN.pt with a positive completed-step count')
+            self.resume_step = self.step
             logger.log(f"Loading model from checkpoint: {resume_checkpoint}...")
             
-            state_dict = torch.load(resume_checkpoint, map_location=self.device)
-            self.model.load_state_dict(state_dict)
+            state_dict = torch.load(resume_checkpoint, map_location=self.device, weights_only=True)
+            self.model.load_state_dict(state_dict, strict=True)
     
     def _load_optimizer_state(self):
         """加载优化器状态"""
         main_checkpoint = find_resume_checkpoint() or self.resume_checkpoint
         opt_checkpoint = bf.join(
             bf.dirname(main_checkpoint),
-            f"opt{self.resume_step:06}.pt"
+            f"opt{self.step:06}.pt"
         )
         
-        if bf.exists(opt_checkpoint):
-            logger.log(f"Loading optimizer state from checkpoint: {opt_checkpoint}")
-            state_dict = torch.load(opt_checkpoint, map_location=self.device)
-            self.opt.load_state_dict(state_dict)
+        if not bf.exists(opt_checkpoint):
+            raise FileNotFoundError(f'Resuming training requires optimizer state: {opt_checkpoint}')
+        logger.log(f"Loading optimizer state from checkpoint: {opt_checkpoint}")
+        state_dict = torch.load(opt_checkpoint, map_location=self.device, weights_only=True)
+        self.opt.load_state_dict(state_dict)
     
     def _create_base_loader(self, deterministic=False):
         """
@@ -179,7 +187,8 @@ class TrainLoop:
             batch_size=self.batch_size,
             shuffle=not deterministic,
             num_workers=num_workers,
-            drop_last=True,
+            drop_last=False,
+            collate_fn=__import__("guided_diffusion.load_dataset", fromlist=["collate_patches"]).collate_patches,
             pin_memory=True,
             prefetch_factor=8 if num_workers else None,
             persistent_workers=num_workers > 0,
@@ -229,7 +238,7 @@ class TrainLoop:
             tuple: (SR_ST, model_kwargs) 或 None
         """
         try:
-            SR_ST, spot_ST, WSI_5120, WSI_320, gene_class, Gene_index_map, metadata_feature, scale_gt, co_expression, WSI_mask, sc, scgpt, pre_he = next(loader)
+            SR_ST, spot_ST, WSI_5120, WSI_320, gene_class, Gene_index_map, metadata_feature, scale_gt, co_expression, WSI_mask, sc, scgpt, pre_he, complexity = next(loader)
 
    
             model_kwargs = {
@@ -244,7 +253,8 @@ class TrainLoop:
                 "WSI_mask": WSI_mask,
                 "sc": sc,
                 "scgpt": scgpt,
-                "pre_he": pre_he
+                "pre_he": pre_he,
+                "complexity": complexity
             }
             
             return (SR_ST, model_kwargs)
@@ -300,22 +310,32 @@ class TrainLoop:
     def run_loop(self):
         """主训练循环"""
         # 计算总迭代次数
-        total_iterations = int(99 * self.epoch / self.batch_size) + 1
+        import math
+        total_iterations = math.ceil(len(self.data) / self.batch_size) * int(self.epoch)
+        if self.max_steps:
+            total_iterations = min(total_iterations, self.max_steps)
+        if total_iterations <= 0:
+            raise ValueError("Training requires a nonempty dataset and positive epoch count")
+        if self.step > total_iterations:
+            raise ValueError(f'Resume step {self.step} exceeds configured {total_iterations} updates')
         
         # 初始化计时
         loop_start_time = time.time()
         
         logger.log(f"Starting training loop: {total_iterations} iterations")
         
-        while self.step <= total_iterations:
+        while self.step < total_iterations:
             step_start_time = time.time()
             
             # 计算当前训练比例
             ratio = self._calculate_training_ratio(self.step, total_iterations)
+            if getattr(self.model, "manuscript_mode", False):
+                self.model.manuscript.progress = self.step / total_iterations
             
             # 获取批次并执行训练步骤
             batch, cond = next(self.data_loader)
             self.run_step(batch, cond, ratio)
+            self.step += 1
             
             # 计算时间统计
             current_time = time.time()
@@ -324,7 +344,7 @@ class TrainLoop:
             
             # 估算剩余时间
             remaining_steps = total_iterations - self.step
-            avg_time_per_step = total_duration / (self.step + 1)
+            avg_time_per_step = total_duration / max(self.step - self.resume_step, 1)
             estimated_remaining = avg_time_per_step * remaining_steps
             
             # 日志输出
@@ -339,19 +359,13 @@ class TrainLoop:
                 logger.dumpkvs()
             
             # 保存检查点
-            if self.step % self.save_interval == 0 and self.step != 0:
+            if self.step % self.save_interval == 0 or self.step == total_iterations:
                 self.save()
                 
                 # 测试模式下提前退出
                 if os.environ.get("DIFFUSION_TRAINING_TEST", "") and self.step > 0:
                     return
             
-            self.step += 1
-        
-        # 保存最终检查点
-        if (self.step - 1) % self.save_interval != 0:
-            self.save()
-        
         logger.log("Training completed!")
     
     def run_step(self, batch, cond, ratio):
@@ -426,7 +440,7 @@ class TrainLoop:
                 )
             
             # 加权平均损失
-            loss = (losses["loss"] * weights).mean()
+            loss = (losses["loss"] * weights).sum() / batch.shape[0]
             if not torch.isfinite(loss):
                 raise RuntimeError(f"Non-finite training loss: {loss.detach().item()}")
             
@@ -443,7 +457,7 @@ class TrainLoop:
         if not self.lr_anneal_steps:
             return
         
-        frac_done = (self.step + self.resume_step) / self.lr_anneal_steps
+        frac_done = self.step / self.lr_anneal_steps
         lr = self.lr * (1 - frac_done)
         
         for param_group in self.opt.param_groups:
@@ -451,8 +465,12 @@ class TrainLoop:
     
     def log_step(self):
         """记录当前步骤的统计信息"""
-        logger.logkv("step", self.step + self.resume_step)
-        logger.logkv("samples", (self.step + self.resume_step + 1) * self.global_batch)
+        logger.logkv("step", self.step + 1)
+        import math
+        updates = self.step + 1
+        batches_per_epoch = math.ceil(len(self.data) / self.batch_size)
+        full_epochs, partial = divmod(updates, batches_per_epoch)
+        logger.logkv("samples", full_epochs * len(self.data) + min(partial * self.batch_size, len(self.data)))
     
     def save(self):
         """保存模型检查点"""
@@ -460,17 +478,18 @@ class TrainLoop:
             state_dict = self.mp_trainer.master_params_to_state_dict(params)
             
             if not rate:
-                filename = f"model{(self.step + self.resume_step):06d}.pt"
+                filename = f"model{self.step:06d}.pt"
                 logger.log(f"Saving model checkpoint: {filename}")
                 
                 with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:
                     torch.save(state_dict, f)
         
         save_checkpoint(0, self.mp_trainer.master_params)
+        self.save_optimizer_state()
     
     def save_optimizer_state(self):
         """保存优化器状态 (可选功能)"""
-        filename = f"opt{(self.step + self.resume_step):06d}.pt"
+        filename = f"opt{self.step:06d}.pt"
         logger.log(f"Saving optimizer state: {filename}")
         
         with bf.BlobFile(bf.join(get_blob_logdir(), filename), "wb") as f:

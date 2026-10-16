@@ -1,47 +1,8 @@
-"""Conditional diffusion backbone and task-specific modules of FOCUS.
+"""FOCUS conditional diffusion backbone.
 
-FOCUS keeps one shared high-resolution diffusion U-Net and attaches the
-task-specific modules to it.  The classes below are named after the modules
-and mechanisms of the manuscript:
-
-  Reference-guided sensitivity enhancement module (Sec. 1.3)
-      OTBasedScRNASTFusion             OT-based scRNA-seq <-> ST fusion strategy
-      SpatialGeneMemoryBank            gene memory bank over spatial co-expression
-      GeneMemoryUpdater                query-conditioned update of the memory bank
-      SparseGeneMemoryAttention        sparse read-out from the gene memory bank
-      HEGuidedRegionalAttention        H&E-guided regional attention mechanism
-      SpatialGeneCorrelationWeighting  spatial gene-correlation weighting
-
-  Morphology-guided alignment module (Sec. 1.4)
-      ModalityDisentangler             shared / unique representation decomposition
-      MultimodalDisentanglement        disentangling loss over fused representations
-
-  Complexity-aware cell-fidelity module (Sec. 1.5)
-      CellFidelityConstraining         ST-H&E constraining on cell-cell correlations
-      CellCorrelationGraphEncoder      graph encoder over cell-cell correlations
-      CellFidelityConstraining.complexity_score and
-      CellFidelityConstraining.select_high_complexity_patch implement the
-      curriculum complexity score and the cellular patch selection.
-
-  Cross-task coordination (Sec. 1.6)
-      CrossTaskCoordinator             lightweight cross-task coordinator
-      TaskTokenAdapter                 compresses a feature map into a task token
-      CrossTaskTokenAttention          multi-head cross-attention over task tokens
-      FiLMModulator                    FiLM-style scaling and shifting
-
-  Multimodal pretraining / matching layers (Sec. 1.2)
-      SpatialMatchingLayer             small matching layer for ST / H&E features
-      HEMatchingLayer                  matching layer for the Prov-GigaPath H&E encoder
-      STMatchingLayer                  matching layer for the scGPT-spatial ST encoder
-      ScalePredictionHead              patch-level scale-factor head
-
-  Prompt and conditioning helpers
-      GeneNamePromptProcessor, MetadataPromptProcessor,
-      SpatialRegionAttention, SensitivityNoiseReplacer
-
-`UNetModel` combines these modules and is constructed by
-`guided_diffusion.script_util.sr_create_model`. Checkpoints must match the
-model architecture and generated gene count.
+Methods 1.3-1.6 are implemented by the live call chain in
+UNetModel._forward_manuscript, guided_diffusion.manuscript and
+ guided_diffusion.morphology. See docs/reproduction.md for equation mapping.
 """
 
 from abc import abstractmethod
@@ -69,130 +30,11 @@ from guided_diffusion.nn import (
 import copy
 import torch.nn.functional as F
 
-import ot  # pip install POT
 
-class OTBasedScRNASTFusion(nn.Module):
 
-    def __init__(self, in_channels: int, reg: float = 10.0, alpha: float = 1e-3, use_conv: bool = False):
-        super().__init__()
-        self.in_channels = in_channels  # C (gene_num)
-        self.reg = reg                  # Sinkhorn 正则
-        self.alpha = alpha              # OT 特征融合权重
-        self.use_conv = use_conv
 
-        if self.use_conv:
-            # 1x1 conv，保持通道不变，便于直接相加
-            self.conv = nn.Conv2d(in_channels, in_channels, kernel_size=1, bias=True)
-
-    def forward(self, sc: torch.Tensor, h_spot: torch.Tensor):
-
-        device = h_spot.device
-        dtype = h_spot.dtype
-
-        B, C, H, W = h_spot.shape
-        assert C == self.in_channels, f"OTBasedScRNASTFusion in_channels={self.in_channels}, but h_spot has C={C}"
-
-        # --- 1. 从 sc 中取前 C 个基因，与 h_spot 通道对齐 ---
-        # 这里假定 gene 对齐已在数据准备阶段完成，如需更精细的索引，可改用 gene index。
-        assert sc.ndim == 2
-        n_cells, C_sc = sc.shape
-
-        sc_sub = sc[:, :C]  # [n_cells, C]
-        sc_sub = sc_sub.to(device=device, dtype=dtype)
-
-        Y_spatial = h_spot.view(B, C, -1).permute(0, 2, 1)  # [B, n_spots, C]
-
-        ot_losses = []
-        ot_maps = []
-
-        X_sc_np = sc_sub.detach().cpu().numpy()  # [n_cells, C]
-
-        for b in range(B):
-            Y_b = Y_spatial[b]  # [n_spots, C]
-            Y_b_np = Y_b.detach().cpu().numpy()
-
-            cost_matrix = ot.dist(X_sc_np, Y_b_np, metric="euclidean") ** 2
-
-            a = np.ones((n_cells,), dtype=np.float64) / n_cells         # 单细胞分布
-            b_vec = np.ones((Y_b_np.shape[0],), dtype=np.float64) / Y_b_np.shape[0]  # spot 分布
-
-            M = ot.sinkhorn(a, b_vec, cost_matrix, self.reg)  # [n_cells, n_spots]
-            M_T = M.T  # [n_spots, n_cells]
-
-            X_space_np = M_T @ X_sc_np
-            X_space = torch.from_numpy(X_space_np).to(device=device, dtype=dtype)  # [n_spots, C]
-
-            L_b = F.mse_loss(Y_b, X_space)
-            ot_losses.append(L_b)
-
-            X_space_map = X_space.permute(1, 0).contiguous().view(C, H, W)  # [C, H, W]
-            ot_maps.append(X_space_map)
-
-        L_ot = torch.stack(ot_losses).mean() if len(ot_losses) > 0 else torch.zeros([], device=device, dtype=dtype)
-        ot_feat = torch.stack(ot_maps, dim=0)  # [B, C, H, W]
-
-        if self.use_conv:
-            ot_feat = self.conv(ot_feat)  # [B, C, H, W]
-
-        h_spot_aligned = h_spot + self.alpha * ot_feat
-
-        return h_spot_aligned, L_ot, ot_feat
     
-class CrossTaskCoordinator(nn.Module):
 
-    def __init__(self, in_channels_list, d_token: int = 128, num_heads: int = 4, token_mode: str = "gap", latent_dim: int | None = None):
-        super().__init__()
-        assert len(in_channels_list) == 4
-        self.num_modules = 4
-        self.tokenizers = nn.ModuleList([TaskTokenAdapter(C, d_token, mode=token_mode) for C in in_channels_list])
-        self.negotiator = CrossTaskTokenAttention(d_token=d_token, num_heads=num_heads, num_modules=self.num_modules)
-        self.modulators = nn.ModuleList([FiLMModulator(d_token, C) for C in in_channels_list])
-
-        # 小残差门，初始很小，稳定训练
-        self.residual_gates = nn.ParameterList([nn.Parameter(torch.full((1,), -2.0)) for _ in range(self.num_modules)])
-
-        self.latent_dim = latent_dim
-        if latent_dim is not None:
-            self.to_latent = nn.ModuleList([nn.Conv2d(C, latent_dim, kernel_size=1) for C in in_channels_list])
-            self.latent_gate = nn.Parameter(torch.tensor(-2.0))  # 小门控
-
-    def forward(self, feats: list[torch.Tensor], z: torch.Tensor | None = None):
-        # feats: [F1,F2,F3,F4], Fi: [B, Ci, Hi, Wi]
-        tokens = [tok(fea) for tok, fea in zip(self.tokenizers, feats)]   # 4 * [B,d]
-        tokens = torch.stack(tokens, dim=1)                               # [B,4,d]
-        updated = self.negotiator(tokens)                                 # [B,4,d]
-
-        out_feats = []
-        for i in range(self.num_modules):
-            token_i = updated[:, i, :]            # [B,d]
-            feat_i  = feats[i]                    # [B,Ci,Hi,Wi]
-            gamma_i, beta_i = self.modulators[i](token_i, feat_i)
-            mod_i = gamma_i * feat_i + beta_i
-            gate_i = torch.sigmoid(self.residual_gates[i]) * 0.5
-            out_i = feat_i + gate_i * mod_i
-            out_feats.append(out_i)
-
-        out_z = None
-        if (self.latent_dim is not None) and (z is not None):
-            B, C_lat, Hz, Wz = z.shape
-            fused = 0
-            for i in range(self.num_modules):
-                ali = self.to_latent[i](out_feats[i])          # [B,latent_dim,Hi,Wi]
-                if ali.shape[-2:] != (Hz, Wz):
-                    ali = F.interpolate(ali, size=(Hz, Wz), mode="bilinear", align_corners=False)
-                fused = fused + ali
-            lgate = torch.sigmoid(self.latent_gate) * 0.5
-            out_z = z + lgate * fused
-        return out_feats, out_z
-    def rebuild_weights(self, in_channels_list, latent_dim):
-
-        self.in_channels_list = in_channels_list
-        self.latent_dim = latent_dim
-        # 重新创建内部线性层，但保持原有 Parameter 注册表不变
-        with torch.no_grad():
-            for name, module in self.named_modules():
-                if isinstance(module, nn.Linear):
-                    module.reset_parameters()
 
 
         
@@ -738,12 +580,19 @@ class UNetModel(nn.Module):
             use_new_attention_order=False,#是否使用新型注意力模式
             root='',
             args=None,
+            manuscript_mode=True,
+            learn_sigma=True,
+            he_feature_dim=1536,
+            st_feature_dim=512,
     ):
         super().__init__()
 
         if num_heads_upsample == -1:
             num_heads_upsample = num_heads
 
+        if not manuscript_mode:
+            raise ValueError("Use the original repository revision for historical model checkpoints")
+        self.manuscript_mode = True
         self.gene_num = gene_num #基因数量，用于定义输入和输出通道数。
         # self.in_channels = in_channels
         self.model_channels = model_channels
@@ -759,7 +608,6 @@ class UNetModel(nn.Module):
         self.num_head_channels = num_head_channels
         self.num_heads_upsample = num_heads_upsample
 
-        self.Constrained_Refinement = CellFidelityConstraining(gene_num=gene_num).cuda()
 
         
 
@@ -845,87 +693,17 @@ class UNetModel(nn.Module):
         conv_ch = self.channel_mult[-1] * self.model_channels
 
         self.input_blocks_lr = nn.ModuleList([copy.deepcopy(module) for module in self.input_blocks])
-        self.dim_reduction_non_zeros = nn.Sequential(
-            conv_nd(dims, 2 * conv_ch, conv_ch, 1, padding=0),
-            nn.SiLU()
-        )
-
-        self.conv_common = nn.Sequential(
-            conv_nd(dims, conv_ch, int(conv_ch / 2), 3, padding=1),
-            nn.SiLU()
-        )
-
-        self.conv_distinct = nn.Sequential(
-            conv_nd(dims, conv_ch, int(conv_ch / 2), 3, padding=1),
-            nn.SiLU()
-        )
-
-        self.fc_modulation_1 = nn.Sequential(
-            nn.Linear(1024, 1024),
-        )
-        self.fc_modulation_2 = nn.Sequential(
-            nn.Linear(1024, 1024),
-        )
-
         self.out = nn.Sequential(
-            normalization(ch),
-            nn.SiLU(),
-            zero_module(conv_nd(dims, input_ch, self.gene_num*2, 3, padding=1)),
+            normalization(ch), nn.SiLU(),
+            zero_module(conv_nd(dims, input_ch, self.gene_num * (2 if learn_sigma else 1), 3, padding=1)),
         )
-        self.pre_he_block = HEMatchingLayer().cuda()
-        self.to_q = nn.Linear(model_channels, model_channels, bias=False)
-        self.to_k = nn.Linear(model_channels, model_channels, bias=False)
-        self.to_v = nn.Linear(model_channels, model_channels, bias=False)
+        self.MemoryNetwork = SpatialGeneMemoryBank(gene_dim=64, num_genes=self.gene_num, query_dim=self.gene_num)
+        self.MemoryNetwork.sparse_attention.sparsity = 0.15
+        self.he_attention = HEGuidedRegionalAttention(scales=[1.0, 2.0, 4.0], gamma=2.0, kappa=0.5, alpha=1.0)
+        from .manuscript import ManuscriptConditioning
+        self.manuscript = ManuscriptConditioning(model_channels, gene_num, he_feature_dim, st_feature_dim)
+        self.meta_processor = MetadataPromptProcessor(out_channels=20, spatial_size=64)
 
-        self.to_q_con = nn.Linear(model_channels, model_channels, bias=False)
-        self.to_k_con = nn.Linear(int(model_channels*1.5), model_channels, bias=False)
-        self.to_v_con = nn.Linear(int(model_channels*1.5), model_channels, bias=False)
-        self.replacer = SensitivityNoiseReplacer(replacement_prob=0.8) 
-        self.ot_align = OTBasedScRNASTFusion(
-            in_channels=self.gene_num,
-            reg=10.0,       
-            alpha=1e-3,     
-            use_conv=False  
-        )
-        # co_expression = np.load('./gene_coexpre.npy')
-
-        self.MemoryNetwork = SpatialGeneMemoryBank(gene_dim=64, num_genes=self.gene_num,query_dim=self.gene_num)
-        #self.optimized_gmsd = OptimizedGMSD(GMSD_loss(), self.gene_num, co_expression_new)
-        self.GMSD_loss = GMSD_loss(num_channels=self.model_channels)
-        self.conv_layer1 = nn.Sequential(
-            conv_nd(dims, 148+self.gene_num, ch, 3, padding=1),
-            nn.SiLU()
-        )
-
-        #self.conv_map = nn.Conv2d(in_channels=10, out_channels=10, kernel_size=3, stride=1, padding=1)
-        self.conv_layer2 = nn.Sequential(
-            conv_nd(dims, input_ch+self.gene_num, input_ch, 3, padding=1),
-            nn.SiLU()
-        )
-        self.scale_head = ScalePredictionHead(in_ch=ch)
-        self.he_attention = HEGuidedRegionalAttention(
-        scales=[1.0, 2.0, 4.0],
-        gamma=2.0,
-        kappa=0.5,
-        alpha=1.0
-    )   
-        self.lmc = None
-        self.lmc_d_token = 128   
-        self.lmc_heads   = 4     
-        self.lmc_token_mode = "gap"  
-        self.T_st   = SpatialMatchingLayer(in_ch=2*self.gene_num, out_ch=128*2, d=256, depth=2, nheads=4)
-        self.T_wsi = SpatialMatchingLayer(in_ch=3,     out_ch=128, d=256, depth=2, nheads=4)
-        self.inject_alpha = 1e-3  # 0.001
-
-        self.lmc = CrossTaskCoordinator(
-            in_channels_list=[128, 128, 128, 128],
-            d_token=self.lmc_d_token,
-            num_heads=self.lmc_heads,
-            token_mode=self.lmc_token_mode,
-            latent_dim=128
-        )
-        self.reduce_F4 = torch.nn.Conv2d(192, 128, kernel_size=1)
-        self.proj_sc = STMatchingLayer()
     def convert_to_fp16(self):
         """
         Convert the torso of the model to float16.
@@ -942,199 +720,129 @@ class UNetModel(nn.Module):
         self.middle_block.apply(convert_module_to_f32)
         self.output_blocks.apply(convert_module_to_f32)
         
-    def forward(self, x, timesteps,low_res, WSI_5120,WSI_320, gene_class, Gene_index_map, metadata_feature,scale_gt, co_expression,WSI_mask,sc,scgpt,pre_he,last_HQST):
-        ratio = x[0, 0, 0, 0]
-        x = x[:, int(x.shape[1] / 2):x.shape[1], ...] 
-
-        hs = []
-        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
-        WSI_5120=WSI_5120/255
-        WSI_320=th.reshape(WSI_320,(-1,WSI_320.shape[2],WSI_320.shape[3],WSI_320.shape[4]))/255 
-
-        h_x = x.type(self.dtype)   
-        h_spot = low_res.type(self.dtype)          
-        h_5120WSI = WSI_5120.type(self.dtype)#        
-        h_320WSI = WSI_320.type(self.dtype)     
-        scgpt = scgpt.type(self.dtype)
-        scgpt = self.proj_sc(scgpt)  
-
-        if hasattr(self, "ot_align") and (self.ot_align is not None) and (sc is not None):
-            if sc.ndim == 3:
-
-                sc_for_ot = sc[0]
+    def _forward_manuscript(self, x, timesteps, low_res, he, cellular, gene_class, gene_map,
+                            prompt, coexpression, masks, reference, scgpt, pre_he, complexity=None):
+        from .manuscript import reference_projection, complexity_grid, cell_consistency
+        core = self.manuscript
+        # These derived conditions depend only on the current input tensors.
+        # Retain their owners to prevent pointer reuse across different images.
+        owners = (low_res, he, masks, reference)
+        cache = None
+        if not torch.is_grad_enabled():
+            if not hasattr(self, '_condition_cache') or any(
+                    a is not b for a, b in zip(self._condition_cache[0], owners)):
+                self._condition_cache = (owners, {})
+            cache = self._condition_cache[1]
+        x = x[:, self.gene_num:]
+        he = he.to(x) / 255
+        if reference is None:
+            raise ValueError('A tissue-matched, gene-aligned scRNA reference is required')
+        scores, active = core.task_scores(low_res, he, reference, masks)
+        self.task_activation_scores = scores.detach()
+        self.task_activation_mask = active.detach()
+        self.resolution_activation = low_res.shape[-2] < x.shape[-2]
+        rectified = low_res.clone()
+        idx = torch.where(active[:, 0])[0]
+        if len(idx):
+            key = ('ot', tuple(idx.tolist()))
+            if cache is not None and key in cache:
+                projected = cache[key]
             else:
-                sc_for_ot = sc
-
-            h_spot, L_ot, ot_feat = self.ot_align(sc_for_ot, h_spot)
-        else:
-            L_ot = torch.zeros([], device=h_spot.device, dtype=h_spot.dtype)
-            ot_feat = None
-
-        pre_he = pre_he.type(self.dtype)
-        pre_he = self.pre_he_block(pre_he) 
-        
-        h_spot = self.replacer.replace_with_noise(h_spot, ratio, dtype=torch.float32)
-
-
-        for idx in range(len(self.input_blocks)):
-
-            h_x = self.input_blocks[idx](h_x, emb)
-            h_spot = self.input_blocks_lr[idx](h_spot, emb) 
-            h_5120WSI = self.input_blocks_WSI5120[idx](h_5120WSI, emb) 
-            hs.append((1 / 3) * h_x + (1 / 3) * F.interpolate(h_spot,(h_x.shape[2],h_x.shape[3])) + (1 / 3) * h_5120WSI)
-        for idx in range(len(self.input_blocks_WSI320)):
-            h_320WSI = self.input_blocks_WSI320[idx](h_320WSI, emb)
-        h_5120WSI = h_5120WSI+0.00010*pre_he
-        h_x = h_x + 0.00010 * scgpt
-        
-        F1 = h_x
-        h_ori=h_temp = h_x
-        h_temp=self.pre(h_temp)
-        h_temp = self.MemoryNetwork(h_temp,memory_bank = co_expression)
-        h_temp = F.relu(h_temp)
-        h_temp = self.post(h_temp)
-        h_x=h_ori*0.999+h_temp*0.001
-
-        h_x, attention_weights = self.he_attention(
-        h_x, 
-        WSI_mask, 
-        return_weights=True)
-        F2 = h_x
-        Constrained_loss = self.Constrained_Refinement(h_5120WSI, last_HQST, WSI_mask)
-
-        if ratio == 2.0:
-            ratio = 1.0
-
-        h_320WSI = th.reshape(h_320WSI, (h_x.shape[0], -1, h_320WSI.shape[1], h_320WSI.shape[2], h_320WSI.shape[3]))
-        h_320WSI = h_320WSI[:, 0:int(h_320WSI.shape[1] * ratio), ...] 
-        h_320WSI = th.mean(h_320WSI, dim=1) 
-        h_320WSI = F.interpolate(h_320WSI, size=(h_5120WSI.shape[2], h_5120WSI.shape[3])) 
-        h_320WSI=th.reshape(h_320WSI,(h_320WSI.shape[0],h_320WSI.shape[1],-1))
-        h_320WSI=th.transpose(h_320WSI,1,2) 
-
-        h_5120WSI_pre=th.reshape(h_5120WSI,(h_5120WSI.shape[0],h_5120WSI.shape[1],-1))
-        h_5120WSI_pre = th.transpose(h_5120WSI_pre,1,2)   
-
-        q = self.to_q(h_5120WSI_pre)  
-        k = self.to_k(h_320WSI)  
-        v = self.to_v(h_320WSI)  
-        mid_atten=torch.matmul(q,th.transpose(k,1,2))
-
-        scale = q.shape[2] ** -0.5
-        mid_atten=mid_atten*scale
-        sfmax = nn.Softmax(dim=-1)
-        mid_atten=sfmax(mid_atten)
-        WSI_atten = torch.matmul(mid_atten, v)  
-        WSI_atten=th.transpose(WSI_atten,1,2)#
-        WSI_atten = th.reshape(WSI_atten, (WSI_atten.shape[0],WSI_atten.shape[1], h_5120WSI.shape[2], h_5120WSI.shape[3]))# [N x 16 x 64 x64 ]
-
-        WSI_atten=0.9*h_5120WSI+0.1*WSI_atten
-        F3 = WSI_atten
-
-
-        GMSD_loss = self.GMSD_loss(WSI_atten.clone().cuda(), h_spot.clone().cuda())
-        
-        com_WSI = self.conv_common(WSI_atten) 
-        com_spot = self.conv_common(h_spot)
-        com_spot =F.interpolate(com_spot, size=(WSI_atten.shape[2], WSI_atten.shape[3]))  
-
-        dist_WSI = self.conv_distinct(WSI_atten)  
-        dist_spot = self.conv_distinct(h_spot)
-        dist_spot = F.interpolate(dist_spot, size=(WSI_atten.shape[2], WSI_atten.shape[3]))   
-
-        com_h = (1 / 2) * com_WSI + (1 / 2) * com_spot  
-
-        part=2
-        part_width=int(dist_WSI.shape[2]/part)
-        WSI_part_dist=dist_WSI
-        spot_part_dist = dist_spot
-        for i in range(part):
-            for j in range(part):
-                WSI_part=dist_WSI[...,i*part_width:(i+1)*part_width,j*part_width:(j+1)*part_width] # [N x 8 x 32 x 32]
-                spot_part = dist_spot[..., i * part_width:(i + 1) * part_width, j * part_width:(j + 1) * part_width] # [N x 8 x 32 x 32]
-                WSI_part = th.reshape(WSI_part, (WSI_part.shape[0], WSI_part.shape[1], -1)) # [N x 8 x 1024]
-                spot_part = th.reshape(spot_part, (spot_part.shape[0], spot_part.shape[1], -1))  # [N x 8 x 1024]
-                WSI_part_T = th.transpose(WSI_part, 1, 2)  # [N x 1024 x 8 ]
-                spot_part_T = th.transpose(spot_part, 1, 2)  # [N x 1024 x 8 ]
-
-                F_WSItoSpot=th.matmul(spot_part_T,WSI_part)# [N x 1024 x 1024]
-                w_WSItoSpot=self.fc_modulation_1(F_WSItoSpot)# [N x 1024 x 1024]
-                sfmax_module = nn.Softmax(dim=-1)
-                w_WSItoSpot=sfmax_module(w_WSItoSpot)# [N x 1024 x 1024]
-                spot_part_out = th.matmul(spot_part, w_WSItoSpot)  # [N x 8 x 1024]
-                spot_part_out = th.reshape(spot_part_out, (spot_part_out.shape[0],spot_part_out.shape[1],
-                                                           int(math.sqrt(spot_part_out.shape[2])), int(math.sqrt(spot_part_out.shape[2]))))  # [N x 8 x 32 x 32]
-                spot_part_dist[...,i*part_width:(i+1)*part_width,j*part_width:(j+1)*part_width]=spot_part_out
-
-                F_SpottoWSI = th.matmul(WSI_part_T, spot_part)  # [N x 1024 x 1024]
-                w_SpottoWSI = self.fc_modulation_2(F_SpottoWSI)  # [N x 1024 x 1024]
-                sfmax_module = nn.Softmax(dim=-1)
-                w_SpottoWSI = sfmax_module(w_SpottoWSI)  # [N x 1024 x 1024]
-                WSI_part_out = th.matmul(WSI_part, w_SpottoWSI)  # [N x 8 x 1024]
-                WSI_part_out = th.reshape(WSI_part_out, (WSI_part_out.shape[0], WSI_part_out.shape[1], int(math.sqrt(WSI_part_out.shape[2])),
-                                                           int(math.sqrt(WSI_part_out.shape[2]))))  # [N x 8 x 32 x 32]
-                WSI_part_dist[..., i * part_width:(i + 1) * part_width,j * part_width:(j + 1) * part_width] = WSI_part_out
-        ### weight
-        WSI_part_dist = 0.9*dist_WSI+0.1*WSI_part_dist
-        spot_part_dist =  0.9*dist_spot+0.1*spot_part_dist
-        h_condition = th.cat([com_h, WSI_part_dist,spot_part_dist], dim=1) # [N x 24 x 64 x 64]
-        F4 = h_condition
-        #########  cross attention for embedding condition
-        h_condition_pre = th.reshape(h_condition, (h_condition.shape[0], h_condition.shape[1], -1))
-        h_condition_pre = th.transpose(h_condition_pre, 1, 2)  # [N x 4096 x 24]
-
-        h_x_pre = th.reshape(h_x, (h_x.shape[0], h_x.shape[1], -1))
-        h_x_pre = th.transpose(h_x_pre, 1, 2)   
-
-        q = self.to_q_con(h_x_pre)   
-        k = self.to_k_con(h_condition_pre)   
-        v = self.to_v_con(h_condition_pre)   
-        mid_atten = torch.matmul(q, th.transpose(k, 1, 2))
-
-        scale = q.shape[2] ** -0.5
-        mid_atten = mid_atten * scale
-        sfmax = nn.Softmax(dim=-1)
-        mid_atten = sfmax(mid_atten)  # [N x 4096 x 4096]
-        Final_merge = torch.matmul(mid_atten, v)   
-        Final_merge = th.transpose(Final_merge, 1, 2)  # [N x 16 x 4096 ]
-        Final_merge = th.reshape(Final_merge, (Final_merge.shape[0], Final_merge.shape[1], h_x.shape[2], h_x.shape[3]))  # [N x 16 x 64 x64 ]
-        
-        meta_processor = MetadataPromptProcessor(out_channels=20, spatial_size=64)
-        batch_size = x.shape[0]  
-        device = Final_merge.device 
-        
-        processed_meta = meta_processor(metadata_feature, batch_size)  
-        # processed_gene = processed_gene.to(device)
-        processed_meta = processed_meta.to(device)# 
-        #new1.5#t2
-        Gene_index_map = Gene_index_map.float() 
-        Gene_index_map1 = torch.nn.functional.interpolate(Gene_index_map, (64, 64)) 
-        Gene_index_map1 = Gene_index_map1.to(device)
-
-        Final_merge = th.cat([Final_merge,Gene_index_map1,processed_meta], dim=1)
-        
-        h = self.conv_layer1(Final_merge)
-        scale_pred = self.scale_head(h)
-
-        expected_channels = [F1.shape[1], F2.shape[1], F3.shape[1], F4.shape[1]]
-        if hasattr(self.lmc, "in_channels_list") and self.lmc.in_channels_list != expected_channels:
-            self.lmc.in_channels_list = expected_channels
-            self.lmc.rebuild_weights(expected_channels, latent_dim=h.shape[1])
-        F4 = self.reduce_F4(F4)
-        _out_feats, h_injected = self.lmc([F1, F2, F3, F4], z=h)
-        
-        if h_injected is not None:
-            h = h+0.0001*h_injected  
-
+                projected = reference_projection(reference[idx], low_res[idx])
+                if cache is not None:
+                    cache[key] = projected
+            rectified[idx] = projected
+        emb = self.time_embed(timestep_embedding(timesteps, self.model_channels))
+        hx, hspt, hhe, skips = x, rectified, he, []
+        for denoise, spatial, histology in zip(self.input_blocks, self.input_blocks_lr, self.input_blocks_WSI5120):
+            hx, hspt, hhe = denoise(hx, emb), spatial(hspt, emb), histology(hhe, emb)
+            skips.append((hx + F.interpolate(hspt, size=hx.shape[-2:], mode='bilinear', align_corners=False) + hhe) / 3)
+        size = hx.shape[-2:]
+        hspt = F.interpolate(hspt, size=size, mode='bilinear', align_corners=False)
+        if pre_he.ndim != 3 or pre_he.shape[1:] != (257, core.he_match.in_features):
+            raise ValueError(f'Expected authentic Prov-GigaPath tile features [B,257,{core.he_match.in_features}]')
+        hhe = hhe + core.he_match(pre_he[:, 0])[:, :, None, None]
+        hx = hx + F.interpolate(core.st_match(scgpt), size=size, mode='bilinear', align_corners=False)
+        features = [torch.zeros_like(hx) for _ in range(3)]
+        attention = he.new_zeros((len(x), 1, *he.shape[-2:]))
+        idx = torch.where(active[:, 0])[0]
+        if len(idx):
+            memory_parts = []
+            for i in idx:
+                bank = coexpression[i]
+                if bank.shape[0] != self.gene_num:
+                    positions = gene_class[i].long()
+                    if (positions < 0).any() or (positions >= bank.shape[0]).any() or len(positions.unique()) != self.gene_num:
+                        raise ValueError('Gene indices do not uniquely identify rows of the co-expression matrix')
+                    bank = bank[positions]
+                memory_parts.append(self.MemoryNetwork(self.pre(hspt[i:i+1]), memory_bank=bank))
+            memory = torch.cat(memory_parts)
+            enhanced = hspt[idx] + self.post(memory)
+            key = ('attention', tuple(idx.tolist()))
+            if cache is not None and key in cache:
+                weights = cache[key]
+                enhanced = self.he_attention.apply_feature_gating(enhanced, weights)
+            else:
+                enhanced, weights = self.he_attention(enhanced, he[idx], return_weights=True)
+                if cache is not None:
+                    cache[key] = weights
+            features[0][idx], attention[idx] = enhanced, weights
+        structural = hx.flatten(1).sum(1) * 0
+        consistency = structural.clone()
+        shared_he = shared_st = unique_he = unique_st = hx[:, :self.model_channels // 2] * 0
+        idx = torch.where(active[:, 2])[0]
+        fused_he = hhe.clone()
+        if len(idx):
+            key = ('complexity', tuple(idx.tolist()))
+            if complexity is not None:
+                if complexity.shape != (len(x), 16, 16):
+                    raise ValueError('Expected native morphology complexity [B,16,16]')
+                grid = complexity[idx]
+            elif cache is not None and key in cache:
+                grid = cache[key]
+            else:
+                # Only the disclosed software demo falls back to its proxy masks.
+                grid = complexity_grid(he[idx], masks[idx])
+                if cache is not None:
+                    cache[key] = grid
+            tiles = cellular[idx].to(x) / 255
+            if tiles.shape[1] != grid.shape[1] * grid.shape[2]:
+                raise ValueError('Cellular H&E tiles must follow the row-major complexity grid')
+            tile_emb = emb[idx].repeat_interleave(tiles.shape[1], dim=0)
+            local = tiles.flatten(0, 1)
+            for module in self.input_blocks_WSI320:
+                local = module(local, tile_emb)
+            local = local.reshape(len(idx), tiles.shape[1], *local.shape[1:])
+            local = local + core.he_match(pre_he[idx, 1:])[:, :, :, None, None]
+            fused_he[idx] = hhe[idx] + core.cellular_fusion(hhe[idx], local, grid)
+            features[2][idx] = fused_he[idx]
+            consistency[idx] = cell_consistency(hhe[idx], hx[idx], masks[idx], grid)
+        idx = torch.where(active[:, 1])[0]
+        if len(idx):
+            aligned, loss, decomposed = core.alignment(hspt[idx], fused_he[idx], masks[idx])
+            features[1][idx], structural[idx] = aligned, loss
+            shared_he, shared_st, unique_he, unique_st = [v.clone() for v in (shared_he, shared_st, unique_he, unique_st)]
+            for destination, source in zip((shared_he, shared_st, unique_he, unique_st), decomposed):
+                destination[idx] = source
+        prompt_map = self.meta_processor(prompt, len(x))
+        prompt_map = F.interpolate(prompt_map, size=size, mode='bilinear', align_corners=False)
+        gene_map = F.interpolate(gene_map, size=size, mode='nearest')
+        h = core.fuse(torch.cat([hx, hhe, prompt_map, gene_map], 1))
+        h = h + core.coordinator(features, active, prompt, scores)
+        scale = h.new_ones(len(h))
         h = self.middle_block(h, emb)
-        
         for module in self.output_blocks:
-            h = th.cat([h, hs.pop()], dim=1)
-            h = module(h, emb)
+            h = module(torch.cat([h, skips.pop()], 1), emb)
+        zero = structural * 0
+        return shared_he, shared_st, unique_he, unique_st, structural, attention, consistency, zero, scale, self.out(h)
 
-        scale_pred = scale_pred.squeeze(-1)   
+    def forward(self, x, timesteps, low_res, WSI_5120, WSI_320, gene_class,
+                Gene_index_map, metadata_feature, scale_gt, co_expression, WSI_mask,
+                sc, scgpt, pre_he, last_HQST=None, complexity=None):
+        return self._forward_manuscript(x, timesteps, low_res, WSI_5120, WSI_320,
+                                        gene_class, Gene_index_map, metadata_feature, co_expression,
+                                        WSI_mask, sc, scgpt, pre_he, complexity)
 
-        return com_WSI, com_spot,  dist_WSI, dist_spot, GMSD_loss, attention_weights,Constrained_loss,L_ot,scale_pred, self.out(h)
 
 class SpatialGeneMemoryBank(nn.Module):
     def __init__(self, query_dim, num_genes, gene_dim):
@@ -1225,8 +933,11 @@ class SpatialGeneMemoryBank(nn.Module):
             memory_bank = memory_bank.unsqueeze(0)
 
 
-        gene_features = memory_bank.mean(dim=-1)  # [num_genes]
-        return gene_features.unsqueeze(1).expand(-1, self.gene_dim)  # [num_genes, gene_dim]
+        # Rows are selected by current ST gene names in the formal loader.
+        # Pooling preserves a vector of correlations for each queried gene.
+        if memory_bank.shape[-1] == self.gene_dim:
+            return memory_bank
+        return F.adaptive_avg_pool1d(memory_bank[None], self.gene_dim).squeeze(0)
 
 
 class GeneMemoryUpdater(nn.Module):
@@ -1508,160 +1219,11 @@ class HEGuidedRegionalAttention(nn.Module):
 
 
 
-class CellCorrelationGraphEncoder(nn.Module):
-    def __init__(self, in_dim, hidden_dim=64):
-        super().__init__()
-        self.fc1 = nn.Linear(in_dim, hidden_dim)
-        self.fc2 = nn.Linear(hidden_dim, hidden_dim)
-
-    def forward(self, X, adj):
-        h = torch.relu(self.fc1(torch.matmul(adj, X)))
-        h = torch.relu(self.fc2(torch.matmul(adj, h)))
-        return h
 
 
 
-class CellFidelityConstraining(nn.Module):
-    def __init__(self, gene_num=1, feat_dim=64, radius=3):
-        super().__init__()
-        self.gene_num = gene_num
-        self.feat_dim = feat_dim
-        self.gnn = CellCorrelationGraphEncoder(in_dim=feat_dim, hidden_dim=feat_dim)
-        self.radius = radius
-
-    def forward(self, HE, HQST, cell_mask):
-        B = HE.shape[0]
-        total_loss = 0.0
-        eps = 1e-6
-
-        HE_crop, HQST_crop, coords = self.select_high_complexity_patch(
-            HE, HQST, patch_size=16, return_coords=True
-        )
-
-        for b in range(B):
-            HE_b = HE_crop[b]  # [3,16,16]
-            HQST_b = HQST_crop[b]  # [gene_num,16,16]
-            masks_b = cell_mask[b]  # [N,256,256]
-            N = masks_b.shape[0]
-
-            row, col, patch_size = coords[b]
-            masks_b = masks_b[:, row*patch_size:(row+1)*patch_size,
-                                   col*patch_size:(col+1)*patch_size]  # [N,16,16]
-            E_HE, E_HQ = [], []
-            for i in range(N):
-                m = masks_b[i].to(HE.device)
-                if m.sum() < 1:
-                    continue
-                m = m / (m.sum() + eps)
-                e_he = (HE_b * m).sum(dim=(1, 2))  # mean with normalization
-                e_hq = (HQST_b * m).sum(dim=(1, 2))
-                E_HE.append(e_he)
-                E_HQ.append(e_hq)
-            if len(E_HE) < 2:
-                continue
-
-            E_HE = torch.stack(E_HE)  # [n_valid,3]
-            E_HQ = torch.stack(E_HQ)  # [n_valid,gene_num]
-
-            coords_cell = []
-            for i in range(N):
-                m = masks_b[i]
-                ys, xs = torch.where(m > 0)
-                if len(xs) > 0:
-                    coords_cell.append(torch.stack([xs.float().mean(), ys.float().mean()]))
-            if len(coords_cell) < 2:
-                continue
-
-            coords_cell = torch.stack(coords_cell)
-            dist = torch.cdist(coords_cell, coords_cell)
-            adj = torch.exp(-dist / (self.radius + 1e-6))
-            adj = adj / (adj.sum(dim=1, keepdim=True) + 1e-8)
-
-            pad_he = F.pad(E_HE, (0, self.feat_dim - E_HE.shape[1]))
-            pad_hq = F.pad(E_HQ, (0, self.feat_dim - E_HQ.shape[1]))
-            G_HE = self.gnn(pad_he, adj)
-            G_HQ = self.gnn(pad_hq, adj)
-
-            E_HE_fused = torch.cat([pad_he, G_HE], dim=1)
-            E_HQ_fused = torch.cat([pad_hq, G_HQ], dim=1)
-
-            CM_HE = self.corr_matrix(E_HE_fused)
-            CM_HQ = self.corr_matrix(E_HQ_fused)
-
-            ssim_val = self.ssim_matrix(CM_HE, CM_HQ)
-            ssim_val = torch.clamp(ssim_val, 0.0, 1.0)
-            loss = 1 - ssim_val
-            total_loss += loss
-
-        total_loss = total_loss / max(B, 1)
-        return total_loss
-
-    @staticmethod
-    def corr_matrix(X, eps=1e-6):
-        """
-        稳定版 cell–cell 相关矩阵：
-        X: [n_cells, feat_dim]
-        """
-        X = X - X.mean(dim=0, keepdim=True)
-        std = X.std(dim=0, keepdim=True) + eps
-        X = X / std
-        corr = X @ X.T / (X.shape[1] - 1)
-        corr = torch.clamp(corr, -1.0, 1.0)
-        return corr.detach() 
 
 
-    def complexity_score(self, patch):
-        patch = patch.detach().cpu()
-        patch = patch - patch.min()
-        patch = patch / (patch.max() + 1e-8)
-        hist = torch.histc(patch, bins=256, min=0.0, max=1.0)
-        prob = hist / (hist.sum() + 1e-8)
-        prob = prob[prob > 0]
-        entropy = -torch.sum(prob * torch.log2(prob))
-        return entropy.item()
-
-    def select_high_complexity_patch(self, HE, HQST, patch_size=16, return_coords=False):
-        B, _, H, W = HE.shape
-        n_h = H // patch_size
-        n_w = W // patch_size
-
-        HE_crops, HQST_crops, coords = [], [], []
-
-        for b in range(B):
-            gray = 0.2989 * HE[b, 0] + 0.5870 * HE[b, 1] + 0.1140 * HE[b, 2]
-            entropies = torch.zeros((n_h, n_w))
-            for i in range(n_h):
-                for j in range(n_w):
-                    patch = gray[i*patch_size:(i+1)*patch_size,
-                                 j*patch_size:(j+1)*patch_size]
-                    entropies[i, j] = self.complexity_score(patch)
-
-            max_idx = torch.argmax(entropies)
-            row, col = divmod(max_idx.item(), n_w)
-            coords.append((row, col, patch_size))
-
-            HE_crop = HE[b, :, row*patch_size:(row+1)*patch_size,
-                              col*patch_size:(col+1)*patch_size]
-            HQST_crop = HQST[b, :, row*patch_size:(row+1)*patch_size,
-                                 col*patch_size:(col+1)*patch_size]
-
-            HE_crops.append(HE_crop)
-            HQST_crops.append(HQST_crop)
-
-        if return_coords:
-            return torch.stack(HE_crops), torch.stack(HQST_crops), coords
-        else:
-            return torch.stack(HE_crops), torch.stack(HQST_crops)
-
-    def ssim_matrix(self, x, y, C1=1e-4, C2=1e-4):
-        mu_x = x.mean()
-        mu_y = y.mean()
-        sigma_x = x.var()
-        sigma_y = y.var()
-        sigma_xy = ((x - mu_x) * (y - mu_y)).mean()
-        ssim = ((2 * mu_x * mu_y + C1) * (2 * sigma_xy + C2)) / \
-               ((mu_x ** 2 + mu_y ** 2 + C1) * (sigma_x + sigma_y + C2))
-        return ssim
     
 
 class ModalityDisentangler(nn.Module):

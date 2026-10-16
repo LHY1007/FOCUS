@@ -1,9 +1,4 @@
-# ---------------------------------------------------------------------------
-# FOCUS training configuration
-#   read by train.py -> train_part.py (see README, section "Training")
-# Keys are passed straight to argparse through
-#   guided_diffusion.script_util.add_dict_to_argparser.
-# ---------------------------------------------------------------------------
+# Settings from the supplied final manuscript and Supplementary Table S9.
 attention_resolutions: 32,16,8
 data_dir: ''
 diffusion_steps: 1000
@@ -11,29 +6,26 @@ dropout: 0.0
 ema_rate: '0.9999'
 fp16_scale_growth: 0.001
 save_interval: 2000
-
-all_gene : 1
-gene_num : 1
-batch_size: 8
+all_gene: 5
+gene_num: 5
+batch_size: 4
 SR_times: 10
-dataset_use : 'All'
-epoch : 3000
-data_root : '/home/cbtil4/ST/datasets/demo/'
+dataset_use: All
+epoch: 2000
+data_root: data/prepared
 n: 1
-log_dir : 'logs/'
-pre_model_dir  : '/model'
-
+log_dir: logs/
+pre_model_dir: models
 num_channels: 128
 num_res_blocks: 1
-
-learn_sigma: true
+learn_sigma: false
 log_interval: 100
 lr: 0.0001
 lr_anneal_steps: 0
 microbatch: -1
 noise_schedule: linear
 num_head_channels: 48
-num_heads: 2
+num_heads: 4
 num_heads_upsample: -1
 resblock_updown: true
 use_scale_shift_norm: true
@@ -46,4 +38,21 @@ use_checkpoint: false
 use_fp16: false
 use_kl: false
 predict_xstart: false
-weight_decay: 0.00001
+weight_decay: 1.0e-05
+manuscript_mode: true
+split_manifest: data/samples.csv
+split: train
+reference_cells: 256
+seed: 0
+he_feature_dim: 1536
+st_feature_dim: 512
+tasks: sensitivity,alignment,cell_fidelity
+lambda_charb: 0.15
+lambda_struct: 0.2
+lambda_dis: 0.1
+lambda_consis: 0.1
+charbonnier_gamma: 0.0001
+finetune: false
+lora_rank: 8
+init_checkpoint: ''
+max_steps: 0

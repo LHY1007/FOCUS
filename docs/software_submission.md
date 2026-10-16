@@ -1,36 +1,22 @@
 # Software submission
 
-The table lists the files and measurements for the Nature software submission checklist.
-
 | Requirement | Location or status |
 | --- | --- |
-| Source code | [Repository](https://github.com/LHY1007/FOCUS) and versioned release archives |
-| Small dataset | Ten H&E PNG and single-gene ST NPZ pairs in `demos/input/` |
-| Dependencies and operating systems | `requirements.txt`, the extras in `setup.cfg`, `FOCUS.yaml` and the README |
-| Tested versions and hardware | README: tested systems |
-| Installation instructions | README: installation |
-| Desktop installation time | 14 min 31 s on Windows 10, including downloads and one download retry; see README |
-| Demo instructions and outputs | `python demos/run.py`; ten PNGs and ten float32 NPZs |
-| Desktop demo time | 30.91 seconds on the Windows RTX 4060 laptop; 19.36 seconds on CB4. Both include startup, model loading and 20 output files, excluding checkpoint download; see README |
-| Use with other data | README: data preparation and usage; `docs/usage.md` |
-| Reproduction instructions (optional) | [Commands, paper settings and required inputs](reproduction.md) |
-| License | MIT License; SPDX `MIT`; no numbered version |
-| Version identifier | [Release v0.2.0](https://github.com/LHY1007/FOCUS/releases/tag/v0.2.0); no DOI assigned |
-| Independent trial | Awaiting a report through the [first-run form](https://github.com/LHY1007/FOCUS/issues/new?template=first-run.yml) |
+| Source code | [Repository](https://github.com/LHY1007/FOCUS) |
+| Small execution dataset | Ten registered H&E PNG and five-gene condition NPZ pairs in `demos/input/` |
+| Dependencies and tested environments | `requirements.txt`, `setup.cfg`, `FOCUS.yaml`, README and `docs/environments/` |
+| Installation | README installation section |
+| Demo and outputs | `python demos/run.py`; ten five-panel PNGs and ten float32 five-gene NPZs; `demos/checkpoint_provenance.json` |
+| Demo runtime | 788.90 s total for ten five-gene pairs, 1,000 DDIM steps each, one CB4 RTX 6000 Ada GPU |
+| New data | [Input preparation and pretrained feature export](usage.md) |
+| Reproduction | [Equations, training settings and verification scope](reproduction.md) |
+| License | MIT, SPDX `MIT` |
+| Version | Package `0.2.0`; this manuscript repair will be identified by its commit |
+| Independent trial | [First-run form](https://github.com/LHY1007/FOCUS/issues/new?template=first-run.yml) |
 
-Preprint version 3 describes the algorithm in Methods sections 1.1–1.6 and 3 (PDF pages 29–39).
-The form's author names and manuscript locations should match the submitted version.
+The demo checkpoint was newly trained for 100 updates from random initialization. Its proxy masks, adult WMB reference and zero scGPT/GigaPath feature arrays are disclosed in [usage.md](usage.md). Its five-gene and sample prompt used the pinned frozen BioBERT v1.1 model. No paper figure accuracy is attributed to this checkpoint.
 
-License text:
-
-> FOCUS source code is distributed under the MIT License (SPDX: MIT).
-
-## Reference policies and examples
+## Reference policies
 
 - [Nature code and software submission checklist](https://www.nature.com/documents/nr-software-policy.pdf)
 - [Nature guidelines for authors submitting code and software](https://www.nature.com/documents/GuidelinesCodePublication.pdf)
-
-The checklist gives these examples of software packages:
-
-- [MGC](https://github.com/neurodata/mgcpy-old), now archived.
-- [LOL](https://github.com/neurodata/lol), supervised dimensionality reduction.

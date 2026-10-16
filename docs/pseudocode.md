@@ -1,47 +1,38 @@
 # Algorithm outline
 
-The outline below follows the training and sampling code in this repository.
+This outline describes the revised implementation. The historical training run and its weights are not included.
 
-## Training
-
-```text
-Read the training configuration and select a one-gene block.
-Load the target ST grid, low-resolution ST, registered H&E at both scales,
-  masks, reference expression, gene-context prior and encoder/metadata features.
-Construct the conditional U-Net and the 1,000-step diffusion process.
-For each optimizer update:
-  Draw a diffusion timestep and Gaussian noise.
-  Noise the target ST and attach the task-selection ratio.
-  Run the model with the noisy ST and the conditioning arrays.
-  Predict one noise channel, one variance channel and a scale factor.
-  Combine the implemented diffusion, alignment, reference, spatial and scale losses.
-  Backpropagate and update the optimizer; save checkpoints at the requested interval.
-```
-
-The implementation is in `train.py`, `train_part.py`, `guided_diffusion/train_util.py` and
-`GaussianDiffusion.training_losses`. The current iteration count is
-`int(99 * epoch / batch_size) + 1`, with an inclusive `0..total_iterations` loop.
-The scale head uses BatchNorm, so training and microbatch sizes must be at least two.
-
-## Conditional model
-
-`UNetModel.forward` extracts features from noisy ST, low-resolution ST and H&E. It applies
-reference fusion through `OTBasedScRNASTFusion`, gene-context memory through
-`SpatialGeneMemoryBank`, regional weighting through `HEGuidedRegionalAttention`, and the
-cell-fidelity term through `CellFidelityConstraining`. Shared and distinct modality features
-are combined with gene-index and metadata features. `CrossTaskCoordinator` produces a latent
-update before the decoder predicts noise and variance. See the root README's module map for names.
-
-## Demo inference
+## Five-gene training
 
 ```text
-Load the one-gene checkpoint in evaluation mode; set the random seed to zero.
-For each H&E PNG and same-name NPZ:
-  Validate input dimensions and finite values.
-  Start a (1, 1, 256, 256) noisy expression tensor.
-  Run the complete four-step respaced reverse-diffusion loop.
-  Require a finite (1, 1, 256, 256) prediction.
-  Save its scalar plane in NPZ and render that plane as a grayscale PNG.
+Read a patient-level split and select five target genes by name and offset.
+Load paired ST and H&E, cell masks, a matched scRNA reference, the supplied
+  co-expression matrix, authentic pretrained features and BioBERT metadata.
+For each epoch, visit every selected patch in batches of four.
+For each update:
+  Sample a timestep from the 1,000-step forward schedule and add Gaussian noise.
+  Use three input-derived heads to score sensitivity, alignment and cell fidelity.
+  Execute only experts whose score exceeds 0.5; the high-resolution U-Net is shared.
+  Project the gene-aligned scRNA reference through Sinkhorn transport when sensitivity
+    is active, and select the top 15% of gene-memory entries.
+  For cell fidelity, score density and shape, size and texture diversity; gradually
+    admit more complex H&E tiles and compare H&E/ST cell PCC matrices.
+  For alignment, deform shared ST features toward H&E and evaluate NGF, GMC and GMSC.
+  Coordinate active expert tokens with attention and FiLM, then predict five noise maps.
+  Minimize 0.15 Charbonnier + 0.20 structure + 0.10 disentangling
+    + 0.10 cell-consistency loss; update AdamW at learning rate 1e-4.
+  Save model and optimizer states at the requested completed-step interval.
 ```
 
-The checkpoint and input conditions used for the demo are described in the root README.
+The default configuration specifies 2,000 epochs. `max_steps` deliberately limits a new execution check. The variance is fixed, so the U-Net emits five channels. See [reproduction.md](reproduction.md) for the equations and newly chosen implementation details.
+
+## Inference
+
+```text
+Read the five-gene checkpoint and matching conditions in evaluation mode.
+Start from Gaussian noise with shape [batch,5,256,256].
+Run 1,000 reverse diffusion steps by default.
+Validate finite five-channel output and preserve the selected gene order.
+```
+
+The bundled software demo reads ten PNG/NPZ pairs and writes ten five-channel NPZ predictions and ten five-panel PNG previews. `python demos/run.py --steps N` requests a shorter run explicitly.

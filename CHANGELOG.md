@@ -2,12 +2,18 @@
 
 ## Unreleased
 
-- Include the Ttn checkpoint in `demos/` and load it without a separate download.
-- Update the Ttn demo checkpoint, input examples and comparison figure.
-- Verify all ten demo inputs on a Windows RTX 4060 laptop and record the runtime.
-- Add Windows installation timings and package version records.
-- Add preprocessing and downstream dependency groups, including native image libraries.
-- Read Visium scalefactors with Python's built-in JSON parser.
+- Align the new five-gene training and inference path with the final 46-page manuscript and
+  49-page supplement: fixed diffusion variance, three conditional experts, four Table S9
+  losses, name-aligned references and sparse gene memory.
+- Add native-resolution morphology scoring from existing cell labels and native Prov-GigaPath
+  tile export. Require real per-sample metadata, pinned frozen BioBERT v1.1 and current-gene
+  co-expression row names. Use all nonempty cellular tiles at inference after the training curriculum.
+- Add patient split validation, frozen-encoder LoRA fine-tuning and model plus optimizer resume.
+- Train a new five-gene execution-demo checkpoint for 100 updates from random initialization;
+  its proxy conditions and single-specimen spatial split are recorded in checkpoint provenance.
+- Compute formal PCC per gene and retain undefined values for constant channels; make DDPM and DDIM
+  sampler choices explicit.
+- Preserve the prior one-gene demo history below as an earlier release, not the current method.
 
 ## 0.2.0 - 2026-10-16
 
