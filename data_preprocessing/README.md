@@ -21,10 +21,6 @@ data_preprocessing/
 │   ├── step6_extract_st_grids.py  # transcripts -> HR_ST and spot_ST grids
 │   ├── step7_stitch_preview.py    # low-resolution tiles -> slide preview
 │   └── step8_qc_tile.py           # per-tile H&E / expression check
-├── histology/
-│   └── stardist_segmentation.py   # H&E -> nuclei -> non-overlapping cell segmentation map
-├── tests/
-│   └── test_segmentation.py       # geometry checks for the segmentation helpers
 └── xenium/
     ├── Xenium_pami.py   # Xenium: aligned H&E tiles + HR_ST and spot_ST grids
     ├── utils.py         # OME-TIFF affine warping, gradient magnitude, graph helpers
@@ -641,7 +637,7 @@ this folder:
 
 | File | Produced by |
 | --- | --- |
-| `cell_mask.npy` | derived from the segmentation map written by `histology/stardist_segmentation.py` |
+| `cell_mask.npy` | cell segmentation on the H&E patch; see [`../downstream/matrix/bin2cell_pipeline.py`](../downstream/matrix/bin2cell_pipeline.py) |
 | `pre_he.npy` | [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) H&E features, 512-dim |
 | `scgpt_data/` | [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per gene group |
 | `sc/{scRNA_data}.h5ad` | the matched single-cell reference for the tissue |
