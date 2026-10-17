@@ -79,8 +79,10 @@ The whole layout follows from the constants all three platforms share:
 
 So `5120_to256.npy` and `HR_ST_256.npz` describe the *same* 2560 um field at the same 10 um/px
 resolution, one as pixels and one as transcript counts; `spot_ST.npz` is the same field aggregated to
-a Visium-like 100 um spot pitch, which is what makes the Xenium, Visium HD and Visium branches
-interchangeable for the dataloader.
+a Visium-like 100 um spot pitch, giving those branches a common conditioning grid shape. The formal loader also
+requires paired HR ST, H&E, cell masks, morphology and pretrained features, gene
+sidecars, physical resolution metadata, an scRNA reference and a co-expression prior;
+these platform scripts alone do not complete that input tree.
 
 `HR_ST_128.npz` is the same transcripts re-binned to 128 x 128 (20 um/bin) and is written by the
 Xenium and Visium HD branches. The Visium HD branch additionally aligns its tiles to the transcript
@@ -642,7 +644,8 @@ source entrances are in [real data preparation](../docs/real_data.md).
 
 | File | Produced by |
 | --- | --- |
-| `cell_mask.npy` | Existing cell segmentation from its separately maintained pipeline. For the public demo, `read_xenium_boundaries.py` reads vendor polygons and `../demos/select_official_cells.py` packs selected official IDs; neither performs segmentation. |
+| `cell_mask.npy` | Existing registered cell instances. For the public demo, `read_xenium_boundaries.py` reads vendor polygons and `../demos/select_official_cells.py` packs selected official IDs; neither performs segmentation. |
+| `st_resolution.json` | Per-sample measured pre-degradation ST bin width (`original_st_bin_um`) and a physical `source` description. The model uses this value to determine whether the original ST scale exceeds 10 µm; tensor size is not a substitute. |
 | `pre_he.npy` | Official [Prov-GigaPath](https://huggingface.co/prov-gigapath/prov-gigapath) tile features, 257 vectors of 1536 dimensions; export with `export_conditioning.py` after accepting the model access terms. |
 | `complexity_grid.npy` | Density and native nuclear size, shape and hematoxylin texture scored from registered H&E plus existing nuclear-instance labels with `score_complexity.py`; this does not generate masks. The scorer writes a source-hash `.json` sidecar. |
 | `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per five-gene group from `export_conditioning.py`; see the pinned non-Flash export and ortholog mapping in `real_data.md`. |

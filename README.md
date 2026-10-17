@@ -12,7 +12,7 @@ Spatial transcriptomics (ST) measures gene expression within tissue, but its cap
 
 FOCUS is a multimodal generative foundation model built on conditional diffusion. It combines native ST with paired haematoxylin and eosin (H&E) images, cell masks, single-cell RNA-sequencing references and spatial co-expression priors. Three task-specific modules address sensitivity, alignment with tissue morphology and cell-level fidelity. A cross-task coordinator compresses active modules into tokens, exchanges information through multi-head cross-attention and uses feature-wise linear modulation (FiLM) to condition each module on the others.
 
-The study trained and evaluated FOCUS across ten ST platforms, 34 tissue contexts and over 1.7 million tissue patches, with more than 5.8 million matched single-cell profiles. Joint enhancement improved performance over treating the tasks separately. Applications examined neutrophil–tumour interactions, spatial osteocyte differentiation and primary–metastatic programmes in head and neck squamous cell carcinoma (HNSCC).
+The study trained and evaluated FOCUS across ten ST platforms, 34 tissue contexts and over 1.7 million tissue patches, with more than 5.8 million single-cell reference profiles. Joint enhancement improved performance over treating the tasks separately. Applications examined neutrophil–tumour interactions, spatial osteocyte differentiation and primary–metastatic programmes in head and neck squamous cell carcinoma (HNSCC).
 
 ![Figure 1 | Coupled ST limitations and FOCUS overview](FOCUS.png)
 
@@ -121,7 +121,7 @@ conda activate focus
   - `pot` (0.9.6) — optimal transport
   - `transformers` (4.57.1) — scGPT / metadata BERT integration
   - `timm` (1.0.22) — vision models
-  - `mpi4py` (3.1.3) — distributed training
+  - `mpi4py` (3.1.3) — MPI runtime used by the training and sampling entrypoints
 
 `FOCUS.yaml` records a supplied conda environment; it is not a verified record of the paper's training machines.
 
@@ -129,6 +129,8 @@ Preprocessing uses OpenCV for image operations, DuckDB and pyometiff for Xenium,
 SpatialData, spatialdata-io and pyvips for Visium HD. Downstream analysis uses rctd-py,
 Tangram, Shapely, OpenSlide, PyArrow, natsort, NetworkX and Scanpy's Leiden dependencies.
 Their version constraints are in the `preprocessing` and `downstream` extras in `setup.cfg`.
+The optional `segmentation` extra names StarDist/TensorFlow dependencies for separately maintained
+segmentation workflows; it does not implement mask generation in this package.
 See [`data_preprocessing/README.md`](data_preprocessing/README.md#2-requirements).
 
 ### Tested system and hardware
@@ -160,7 +162,7 @@ The final package list is in [`docs/environments/windows-tools.txt`](docs/enviro
 Optional legacy paths use `accimage` for image decoding and TensorFlow 1.x for TensorBoard
 logging. The tests above used Pillow decoding and the default stdout/log/CSV logger.
 
-The model requires an NVIDIA CUDA GPU. The earlier one-gene demo also passed on this laptop's
+The model requires an NVIDIA CUDA GPU. An archived one-gene demo ran on this laptop's
 **GeForce RTX 4060 Laptop GPU (8 GB VRAM)**, with NVIDIA driver **616.56** and the
 PyTorch CUDA 12.6 build listed above.
 
@@ -181,8 +183,10 @@ is `demos/output/3_10.npz` with one finite `(5,256,256)` float32 prediction and
 are separately stored in `demos/input/3_10.npz`; predictions are normalized
 expression values, not counts.
 
-The validated 1,000-step run took **151.90 s** on one CB4 RTX 6000 Ada GPU,
-including model loading and output writing. Its preview is visibly speckled;
+The validated 1,000-step run took **148.02 s** on one CB4 RTX 6000 Ada GPU,
+including model loading and output writing. PyTorch reported **0.43 GiB peak allocated**
+and **0.70 GiB peak reserved** CUDA memory; these are allocator figures on a 48 GiB card,
+not a minimum VRAM requirement. Its preview is visibly speckled;
 the 100-update checkpoint has no demonstrated biological reconstruction accuracy.
 
 The real inputs contain official 10x cell and nuclear polygons, native H&E morphology
@@ -269,6 +273,7 @@ data_root/
 | `coexpression_matrix.genes.txt` | `K` unique names | Exact row and column gene order of that matrix; required to select current five-gene rows |
 | `gene_order.npy` | `(G,)` int | Column indices into the platform's full gene panel |
 | `gene_name.txt` | `(G,)` str | The matching gene names |
+| `st_resolution.json` | JSON per sample | Measured pre-degradation ST bin size in µm and its physical source; required for the resolution gate |
 
 `G` is the panel size of the sample, and it must match the gene dimension of `HR_ST_256.npz` and
 `spot_ST.npz` (see [`data_preprocessing/README.md`](data_preprocessing/README.md#1-the-output-layout)).
@@ -289,7 +294,7 @@ more than one.
 ### Preprocessing Code
 
 Platform-specific H&E/ST preprocessing lives in [`data_preprocessing/`](data_preprocessing/); existing masks, co-expression priors and pretrained features are supplied through separate steps.
-It covers the three platforms used for the main experiments:
+It covers three of the ten evaluated platforms:
 
 | Platform | Script | Produces |
 | --- | --- | --- |
@@ -311,7 +316,7 @@ Additional inputs have separate generators or export helpers:
 
 | File | Produced by |
 | --- | --- |
-| `cell_mask.npy` | cell segmentation on the H&E patch; see [`downstream/matrix/bin2cell_pipeline.py`](downstream/matrix/bin2cell_pipeline.py) |
+| `cell_mask.npy` | Existing cell instances registered to the patch; the public Xenium example uses official cell boundaries |
 | `pre_he.npy` | Official [Prov-GigaPath](https://huggingface.co/prov-gigapath/prov-gigapath) H&E features exported by `data_preprocessing/export_conditioning.py` after gated access |
 | `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings exported by `data_preprocessing/export_conditioning.py` with verified checkpoint loading |
 | `coexpression_matrix.npy` | spatial gene–gene co-expression computed across the cohort |
@@ -464,13 +469,18 @@ Check their architecture and gene order before use; they are not relabeled as we
 The equation mapping, implementation choices and verification scope are listed
 in [reproduction notes](docs/reproduction.md). The demo uses its own checkpoint and sampling settings.
 
-FOCUS is evaluated using:
+The built-in `sample.py` reports only the following patch-level metrics:
 
 - **RMSE**: root mean squared error for intensity accuracy
 - **SSIM**: structural similarity index for spatial patterns
 - **CC / PCC**: Pearson correlation coefficient for gene-wise concordance
 
-`sample.py` reports all three per patch in `metrics.csv`.
+`sample.py` writes these three per patch in `metrics.csv` and a JSON record linking each
+prediction to its sample, gene order and physical ST resolution. For a paired five-gene NPZ,
+`python -m evaluation.evaluate_pair --observed demos/input/3_10.npz --prediction demos/output/3_10.npz --output demos/output/metrics.json`
+exports per-gene normalized RMSE, SSIM and PCC with observed UMI totals. The bundled pair
+is a training-tile reconstruction. These utilities do not implement external baselines or
+the full set of manuscript figure metrics.
 
 ## Troubleshooting
 

@@ -37,6 +37,16 @@ for **Ttn, Car3, Des, Cav1, Myoz2**. HR and low-resolution observed count totals
 gene by gene: **755420, 546715, 536507, 350435, 332624**. Neither the five channels
 nor the reference genes are selected by taking the first five columns.
 
+`Preview_379/st_resolution.json` records `original_st_bin_um: 10.0`, calculated
+from the registered **pre-degradation** `HR_ST_256.npz` grid (2,560 µm / 256
+bins), with that source stated in the file. Raw Xenium transcript coordinates
+are finer than this prepared grid. The task-resolution gate reads this numeric
+sample metadata and activates only for values **greater than** 10 µm; the
+26×26 conditioning tensor size does not determine it. New samples must carry
+their own measured physical bin size and source; the loader provides no
+platform-name fallback. The saved training config records the values for
+checkpoint resume checks.
+
 On this tile, `read_xenium_boundaries.py` projected official **nuclear** polygons
 into a native label raster (46,036 intersect the field, 46,035 remain visible).
 `score_complexity.py` used these nuclear labels and H&E to score density,
@@ -63,11 +73,15 @@ has one `train` donor and no validation/test donor. Training used random initial
 one tile, batch 1, learning rate 1e-4 and 100 optimizer updates, with the paper's four
 loss weights. The run is a real-condition execution check, not the manuscript's
 2,000-epoch or seven-GPU experiment. Its model/optimizer/config are in
-`../real_training_nucleus/Mouse_pup_muscle/10X/G0-5_20261017-072038-787739182/` on CB4.
+`../control/real_training_spatial_v1/Mouse_pup_muscle/10X/G0-5_20261017-173441-573639307/` on CB4.
+The saved configuration records the measured bin size and its physical derivation;
+resume checks both. The physical source record was copied from the already present
+`st_resolution.json` into that configuration after training.
 `sample.py` also loaded the saved config/checkpoint and
 ran on this formal tree with `split=train` and an explicitly shortened two-step
 DDPM execution check. The bundled demo ran the full 1,000-step DDIM chain on the
-same real conditions in 151.90 s. Its prediction is visibly speckled, so neither
+same real conditions in 148.02 s on one RTX 6000 Ada GPU (0.43 GiB peak CUDA
+allocated; 0.70 GiB peak reserved). Its prediction is visibly speckled, so neither
 run establishes biological accuracy.
 
 ## Preparing your own formal tree
@@ -86,7 +100,11 @@ run establishes biological accuracy.
 3. Place each observed HR/low ST and its registered H&E in the documented formal
    layout. Record the original gene panel and channel indices; `gene_name.txt[i]`
    must identify source column `gene_order.npy[i]`. Low- and high-resolution counts
-   must use the same panel and physical field. `demos/prepare_observed.py` and
+   must use the same panel and physical field. In each sample directory create
+   `st_resolution.json` with numeric `original_st_bin_um` and a nonempty
+   `source` describing how the **pre-degradation** ST bin size was measured.
+   For the bundled tile the value is 10.0 from 2,560 µm / 256 HR bins.
+   `demos/prepare_observed.py` and
    `demos/assemble_real_data.py` show validated extraction and assembly for this tile.
 4. Supply **existing** native cell and nuclear instance labels, plus a compatible
    prior from their maintainers. To turn existing **nuclear** labels into complexity, run

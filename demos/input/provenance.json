@@ -9,6 +9,10 @@
     "width_um": 2560
   },
   "formal_assembly_provenance_sha256": "e031a89f24cca7fbada300f5f36e196c385a1acd09057c56e5ced3d3434abddc",
+  "original_st_resolution": {
+    "original_st_bin_um": 10.0,
+    "source": "Registered pre-degradation HR_ST_256.npz: 2560 um field / 256 bins; raw Xenium transcript positions are finer"
+  },
   "genes": [
     "Ttn",
     "Car3",
@@ -467,6 +471,6 @@
   "bioBERT": "frozen dmis-lab/biobert-v1.1 using actual sample metadata and current five genes",
   "file_sha256": {
     "3_10.png": "785f171af8a475b542b992af7ba5fa112f15335534a9971fa6ac77258e01b3ff",
-    "3_10.npz": "ba911f375a3a6b468bd4a21823751fbe9a0d1a64222e298537e33e973d0dab4e"
+    "3_10.npz": "ca35db008556b3f1916ea72ef0c38bbdd7460641935d647ba87a3ee6c15bffad"
   }
 }

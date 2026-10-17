@@ -179,8 +179,10 @@ class TrainLoop:
         Args:
             deterministic: 是否使用确定性加载 (不shuffle)
         """
-        num_workers = min(32, os.cpu_count() // 4)
+        num_workers = min(4, max(1, (os.cpu_count() or 1) // 4))
         num_workers = int(os.environ.get("FOCUS_NUM_WORKERS", num_workers))
+        if not 0 <= num_workers <= 4:
+            raise ValueError('FOCUS_NUM_WORKERS must be between 0 and 4')
         
         loader = DataLoader(
             self.data,
@@ -190,7 +192,7 @@ class TrainLoop:
             drop_last=False,
             collate_fn=__import__("guided_diffusion.load_dataset", fromlist=["collate_patches"]).collate_patches,
             pin_memory=True,
-            prefetch_factor=8 if num_workers else None,
+            prefetch_factor=2 if num_workers else None,
             persistent_workers=num_workers > 0,
         )
         
@@ -198,7 +200,7 @@ class TrainLoop:
         while True:
             yield from loader
     
-    def _create_dataloader_with_prefetch(self, max_prefetch=4):
+    def _create_dataloader_with_prefetch(self, max_prefetch=1):
         """
         创建带预取功能的数据加载器
         
@@ -238,7 +240,7 @@ class TrainLoop:
             tuple: (SR_ST, model_kwargs) 或 None
         """
         try:
-            SR_ST, spot_ST, WSI_5120, WSI_320, gene_class, Gene_index_map, metadata_feature, scale_gt, co_expression, WSI_mask, sc, scgpt, pre_he, complexity = next(loader)
+            SR_ST, spot_ST, WSI_5120, WSI_320, gene_class, Gene_index_map, metadata_feature, scale_gt, co_expression, WSI_mask, sc, scgpt, pre_he, complexity, original_st_bin_um = next(loader)
 
    
             model_kwargs = {
@@ -254,7 +256,8 @@ class TrainLoop:
                 "sc": sc,
                 "scgpt": scgpt,
                 "pre_he": pre_he,
-                "complexity": complexity
+                "complexity": complexity,
+                "original_st_bin_um": original_st_bin_um
             }
             
             return (SR_ST, model_kwargs)

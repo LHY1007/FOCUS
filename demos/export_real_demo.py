@@ -15,7 +15,8 @@ from guided_diffusion.load_dataset import load_data
 GENES = ('Ttn', 'Car3', 'Des', 'Cav1', 'Myoz2')
 FIELDS = ('target_normalized', 'low_res', 'WSI_5120', 'WSI_320',
           'gene_class', 'Gene_index_map', 'metadata_feature', 'scale_gt',
-          'co_expression', 'WSI_mask', 'sc', 'scgpt', 'pre_he', 'complexity')
+          'co_expression', 'WSI_mask', 'sc', 'scgpt', 'pre_he', 'complexity',
+          'original_st_bin_um')
 
 
 def sha256(path):
@@ -73,6 +74,7 @@ def export(data_root, pre_model_dir, output):
         'source_sample': 'Xenium_V1_mouse_pup, XOA 1.6.0, one P1 donor, CC BY 4.0',
         'source_tile': {'id': '3_10', 'x_um': 3840, 'y_um': 12800, 'width_um': 2560},
         'formal_assembly_provenance_sha256': sha256(data_root / 'provenance.json'),
+        'original_st_resolution': json.loads((sample / 'st_resolution.json').read_text()),
         'genes': list(GENES), 'source_channels': columns.tolist(),
         'observed_counts_per_gene': observed_hr.sum((1, 2)).astype(int).tolist(),
         'reference': {'source': 'Cao et al. P0 muscle scRNA, independent study',

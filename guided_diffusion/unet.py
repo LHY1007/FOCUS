@@ -721,8 +721,8 @@ class UNetModel(nn.Module):
         self.output_blocks.apply(convert_module_to_f32)
         
     def _forward_manuscript(self, x, timesteps, low_res, he, cellular, gene_class, gene_map,
-                            prompt, coexpression, masks, reference, scgpt, pre_he, complexity=None):
-        from .manuscript import reference_projection, cell_consistency
+                            prompt, coexpression, masks, reference, scgpt, pre_he, complexity=None, original_st_bin_um=None):
+        from .manuscript import reference_projection, cell_consistency, resolution_gate
         core = self.manuscript
         # These derived conditions depend only on the current input tensors.
         # Retain their owners to prevent pointer reuse across different images.
@@ -740,7 +740,7 @@ class UNetModel(nn.Module):
         scores, active = core.task_scores(low_res, he, reference, masks)
         self.task_activation_scores = scores.detach()
         self.task_activation_mask = active.detach()
-        self.resolution_activation = low_res.shape[-2] < x.shape[-2]
+        self.resolution_activation = resolution_gate(original_st_bin_um)
         rectified = low_res.clone()
         idx = torch.where(active[:, 0])[0]
         if len(idx):
@@ -829,10 +829,10 @@ class UNetModel(nn.Module):
 
     def forward(self, x, timesteps, low_res, WSI_5120, WSI_320, gene_class,
                 Gene_index_map, metadata_feature, scale_gt, co_expression, WSI_mask,
-                sc, scgpt, pre_he, last_HQST=None, complexity=None):
+                sc, scgpt, pre_he, last_HQST=None, complexity=None, original_st_bin_um=None):
         return self._forward_manuscript(x, timesteps, low_res, WSI_5120, WSI_320,
                                         gene_class, Gene_index_map, metadata_feature, co_expression,
-                                        WSI_mask, sc, scgpt, pre_he, complexity)
+                                        WSI_mask, sc, scgpt, pre_he, complexity, original_st_bin_um)
 
 
 class SpatialGeneMemoryBank(nn.Module):

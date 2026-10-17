@@ -10,6 +10,7 @@ import argparse
 import hashlib
 import json
 import os
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -26,11 +27,11 @@ import torch
 import yaml
 from guided_diffusion.script_util import sr_create_model_and_diffusion
 
-MODEL_SHA256 = 'acc54e13adbf2249a08eb2c19fa5ae6bcb55ddb9fdf0e310adc56066cb5320b9'
+MODEL_SHA256 = '618ba53577dcdecd2c383f34dd869e1f5e5fce19b278c5509eeb70576f5616e7'
 GENES = ('Ttn', 'Car3', 'Des', 'Cav1', 'Myoz2')
 KEYS = ('low_res', 'WSI_320', 'gene_class', 'Gene_index_map',
         'metadata_feature', 'scale_gt', 'co_expression', 'WSI_mask',
-        'sc', 'scgpt', 'pre_he', 'complexity')
+        'sc', 'scgpt', 'pre_he', 'complexity', 'original_st_bin_um')
 
 
 def checksum(path):
@@ -56,6 +57,7 @@ def checkpoint_path(override):
 
 
 def main():
+    started = time.perf_counter()
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--checkpoint', help='Use another compatible local five-gene checkpoint')
     parser.add_argument('--steps', type=int, default=1000, help='Reverse steps; default matches the manuscript')
@@ -87,6 +89,7 @@ def main():
     model.load_state_dict(state, strict=True)
     model.cuda().eval()
     del state
+    torch.cuda.reset_peak_memory_stats()
     for number, path in enumerate(inputs, 1):
         if provenance['file_sha256'].get(path.name) != checksum(path):
             raise ValueError(f'{path.name}: input hash disagrees with provenance')
@@ -104,6 +107,11 @@ def main():
                 raise ValueError(f'{path.name}: observed H&E/ST pairing failed count conservation')
             conditions = {key: torch.from_numpy(np.array(data[key], dtype=np.float32))
                           .unsqueeze(0).cuda() for key in KEYS}
+        source_resolution = provenance.get('original_st_resolution', {})
+        if (float(conditions['original_st_bin_um'].item()) !=
+                source_resolution.get('original_st_bin_um') or
+                not str(source_resolution.get('source', '')).strip()):
+            raise ValueError(f'{path.name}: physical ST resolution disagrees with source record')
         with Image.open(he_path) as he:
             rgb = np.array(he.convert('RGB'), dtype=np.float32)
         if rgb.shape != (256, 256, 3):
@@ -115,14 +123,15 @@ def main():
             raise ValueError(f'{path.name}: reference must have five target-gene channels')
         expected = {'WSI_320': (1, 256, 3, 16, 16), 'metadata_feature': (1, 768),
                     'Gene_index_map': (1, 5, 256, 256), 'scgpt': (1, 512, 26, 26),
-                    'pre_he': (1, 257, 1536), 'complexity': (1, 16, 16)}
+                    'pre_he': (1, 257, 1536), 'complexity': (1, 16, 16),
+                    'original_st_bin_um': (1,)}
         for key, shape in expected.items():
             if tuple(conditions[key].shape) != shape:
                 raise ValueError(f'{path.name}: {key} must have shape {shape}')
         if not all(torch.isfinite(value).all() for value in conditions.values()):
             raise ValueError(f'{path.name}: non-finite input values')
         if any(not torch.count_nonzero(conditions[key]) for key in
-               ('WSI_mask', 'sc', 'scgpt', 'pre_he', 'complexity')):
+               ('WSI_mask', 'sc', 'scgpt', 'pre_he', 'complexity', 'original_st_bin_um')):
             raise ValueError(f'{path.name}: missing or placeholder multimodal conditions')
         conditions['last_HQST'] = torch.zeros((1, 5, 256, 256), device='cuda')
         with torch.inference_mode():
@@ -138,6 +147,9 @@ def main():
         preview = np.concatenate([np.rint(plane * 255).astype(np.uint8) for plane in image], axis=1)
         Image.fromarray(preview).save(output/f'{path.stem}.png')
         print(f'{number}/{len(inputs)}  {path.stem} -> output/{path.stem}.png + {path.stem}.npz', flush=True)
+    print(f'CUDA peak allocated: {torch.cuda.max_memory_allocated() / 2**30:.2f} GiB; '
+          f'peak reserved: {torch.cuda.max_memory_reserved() / 2**30:.2f} GiB', flush=True)
+    print(f'Elapsed: {time.perf_counter() - started:.2f} s', flush=True)
 
 
 if __name__ == '__main__':

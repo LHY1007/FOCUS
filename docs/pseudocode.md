@@ -5,13 +5,15 @@ This outline summarizes the current implementation. Historical training weights 
 ## Five-gene training
 
 ```text
-Read a patient-level split and select five target genes by name and offset.
-Load paired ST and H&E, cell masks, a matched scRNA reference, the supplied
+Read a patient-level split, explicit source ST bin size and five target genes by name and offset.
+Load paired ST and H&E, cell masks, a tissue-matched scRNA reference, the supplied
   co-expression matrix, authentic pretrained features and BioBERT metadata.
 For each epoch, visit every selected patch in batches of four.
 For each update:
   Sample a timestep from the 1,000-step forward schedule and add Gaussian noise.
-  Use three input-derived heads to score sensitivity, alignment and cell fidelity.
+  Score capture sparsity, ST/H&E spatial edge agreement and between-cell expression
+    mixing with three input-derived heads; activate resolution when the measured
+    source ST bin is coarser than 10 µm.
   Execute only experts whose score exceeds 0.5; the high-resolution U-Net is shared.
   Project the gene-aligned scRNA reference through Sinkhorn transport when sensitivity
     is active, and select the top 15% of gene-memory entries.

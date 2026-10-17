@@ -90,6 +90,10 @@ def assemble(source, features, reference, coexpression, coexpression_genes, outp
         shutil.copyfile(origin, dest)
     np.save(sample / 'gene_order.npy', np.asarray(channels, dtype=np.int64))
     (sample / 'gene_name.txt').write_text('\n'.join(GENES) + '\n', encoding='utf-8')
+    (sample / 'st_resolution.json').write_text(json.dumps({
+        'original_st_bin_um': 10.0,
+        'source': 'Registered pre-degradation HR_ST_256.npz: 2560 um field / 256 bins; raw Xenium transcript positions are finer'
+    }, indent=2) + '\n', encoding='utf-8')
     (sample / 'metadata_prompt.txt').write_text(
         'Xenium In Situ gene expression; Mus musculus; one-day-old mouse pup; '
         'registered sagittal H&E section; muscle-enriched field inferred from '

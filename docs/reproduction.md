@@ -21,6 +21,7 @@ uses `UNetModel._forward_manuscript`. The same model is used by `sample.py` and 
 | Methods 1.5: cellular selection and cross-attention | complexity_grid, ManuscriptConditioning.cellular_fusion |
 | Methods 1.5, p. 35: PCC and (1-cosine)/2 | pearson_cells, cell_consistency; both encoder paths retain gradients |
 | Methods 1.6: three heads, threshold >0.5, active tokens and FiLM | ManuscriptConditioning.task_scores, ActiveTaskCoordinator; inactive experts skipped per sample |
+| Methods 1.6: physical resolution gate | `st_resolution.json` → `Data_all` → `resolution_gate`; measured pre-degradation ST bin size >10 µm activates the shared backbone gate |
 | Methods 2: patient separation before patch extraction | guided_diffusion.splits; loader filters samples and rejects cross-split patients |
 | Methods 3.1, Table S9: four-term loss | 0.15 charb + 0.20 struct + 0.10 dis + 0.10 consis |
 | Methods 3.2: frozen encoders, LoRA and prompt routing | configure_finetuning, LowRankUpdate, ActiveTaskCoordinator.router |
@@ -36,8 +37,11 @@ noise or shared/distinct ratio losses.
 These values define the new implementation; they are not recovered historical settings.
 
 - Sinkhorn regularization 10, 100 log-domain iterations, differentiable transport and one reference per sample.
-- Activation heads start with bias 0.1 and weight standard deviation 0.01. A straight-through gate carries
-  training gradients while forward expert selection uses the stated hard threshold.
+- Activation heads receive capture sparsity, ST/H&E edge mismatch and between-cell
+  expression mixing diagnostics. Their initial feature thresholds are 0.05, 0.40
+  and 0.25, respectively. These are software calibration choices, not historical
+  task labels. A straight-through gate carries training gradients for active heads
+  while forward expert selection uses the stated hard threshold.
 - Cross-modulation uses 3x3 kernels. Deformation uses two convolutions, maximum normalized displacement
   0.1. Shared-feature perturbation standard deviation is 0.01; numerical c is 1e-8.
 - The unique-feature cosine coefficient is 1.0; the paper specifies its sign but no value.
@@ -96,7 +100,7 @@ validation or test donor. See [real_data.md](real_data.md) and [usage.md](usage.
 
 ## Verification scope
 
-Fourteen targeted synthetic tests cover gene matching, offsets, skipped indices, current co-expression
+Sixteen targeted synthetic tests cover gene matching, offsets, skipped indices, current co-expression
 rows, per-sample gene prompts, native morphology,
 PCC and cell gradients,
 task disabling, training/evaluation cellular selection, deformation gradients, patient separation and
@@ -107,7 +111,8 @@ gradients, encoder freezing, a LoRA optimizer step, merged-weight strict loading
 A full 2,000-epoch experiment and Fig. 2-7 quantitative results have not been rerun.
 Both official pretrained encoder weight sets were loaded and real features were exported for
 the bundled registered tile. Strict formal loading and 100 real-condition optimizer updates
-completed. The genuine-condition 1,000-step DDIM run took 151.90 s and its
+completed. The genuine-condition 1,000-step DDIM run took 148.02 s on an
+RTX 6000 Ada (0.43 GiB peak allocated, 0.70 GiB peak reserved) and its
 five-panel PNG exactly matches its NPZ. The preview remains visibly speckled;
 this is a training-tile execution check, not independent accuracy evidence.
 The formal `sample.py` path also passed an explicitly shortened two-step DDPM

@@ -114,15 +114,14 @@ class Data_all(Dataset):
 
         # ---- 每子数据集的当前 gene_order.npy / gene_name.txt 分组
         self.sub_gene_info = self._load_subdataset_gene_info()
+        # Only the selected cells and genes are needed after the reference is aligned.
+        del self.sc_reference
 
         # ---- 加载每类共表达矩阵（修正路径：<root>/<cls>/coexpression_matrix.npy）
         self._load_coexpression(self.data_root)
 
         # ---- 加载 ST / spot / WSI / mask / sc 索引
         self._load_data(self.data_root)
-
-        # ---- 归一化
-        self._normalize_data()
 
         # ---- BERT 元数据
         self._load_bert_model(pre_model_dir)
@@ -266,106 +265,102 @@ class Data_all(Dataset):
     # 加载 ST / spot / WSI / mask / sc
     # ===================================================== #
     def _load_data(self, root):
-        sr_list, spot_list, wsi5120_list, wsi320_list, wsimask_list, sc_list = [], [], [], [], [], []
-        scgpt_list, prehe_list, complexity_list = [], [], []
-        loaded_patches = []
-
+        """Index paths only. Pixel arrays are read for the requested patch in __getitem__."""
+        import json
+        from pathlib import Path
+        self.patch_paths = []
+        self.sample_resolution = {}
+        self.sample_resolution_source = {}
+        loaded = []
         for cls_name, sub, layer_name, patch_id in self.selected_patches:
-            base = os.path.join(root, cls_name, sub)
-            key = (cls_name, sub)
+            base = Path(root) / cls_name / sub
+            key = cls_name, sub
             if key not in self.sub_gene_info:
-                # 若该子数据集未提供基因文件则跳过该 patch
-                print(f"Warning: skipping patch without gene info: {(cls_name, sub, layer_name, patch_id)}")
                 continue
-
-            idxN = self.sub_gene_info[key]['idxN']
-
+            if key not in self.sample_resolution:
+                path = base / 'st_resolution.json'
+                if not path.is_file():
+                    raise FileNotFoundError(f'{path}: specify the measured pre-degradation ST bin size in um')
+                record = json.loads(path.read_text())
+                value = record.get('original_st_bin_um')
+                if not isinstance(value, (int, float)) or not np.isfinite(value) or value <= 0:
+                    raise ValueError(f'{path}: original_st_bin_um must be a finite positive number')
+                if not isinstance(record.get('source'), str) or not record['source'].strip():
+                    raise ValueError(f'{path}: specify the physical source of the original ST bin size')
+                self.sample_resolution[key] = float(value)
+                self.sample_resolution_source[key] = record['source'].strip()
             paths = {
-                'hr': os.path.join(base, 'HR_ST', 'extract', layer_name, patch_id, 'HR_ST_256.npz'),
-                'spot': os.path.join(base, 'spot_ST', 'extract', layer_name, patch_id, 'spot_ST.npz'),
-                'wsi5120': os.path.join(base, 'WSI', 'extract', layer_name, patch_id, '5120_to256.npy'),
-                'wsi320': os.path.join(base, 'WSI', 'extract', layer_name, patch_id, '320_to16.npy'),
-                'mask': os.path.join(base, 'WSI', 'extract', layer_name, patch_id, 'cell_mask.npy'),
+                'hr': base / 'HR_ST/extract' / layer_name / patch_id / 'HR_ST_256.npz',
+                'spot': base / 'spot_ST/extract' / layer_name / patch_id / 'spot_ST.npz',
+                'wsi': base / 'WSI/extract' / layer_name / patch_id / '5120_to256.npy',
+                'mask': base / 'WSI/extract' / layer_name / patch_id / 'cell_mask.npy',
+                'pre_he': base / 'WSI/extract' / layer_name / patch_id / 'pre_he.npy',
+                'complexity': base / 'WSI/extract' / layer_name / patch_id / 'complexity_grid.npy',
+                'scgpt': base / 'spot_ST/extract' / layer_name / patch_id / 'scgpt_data' /
+                    f'{self.gene_start+1}to{self.gene_start+self.gene_num}.npy',
             }
-
-            if not (os.path.exists(paths['hr']) and os.path.exists(paths['spot']) and
-                    os.path.exists(paths['wsi5120']) and os.path.exists(paths['wsi320']) and
-                    os.path.exists(paths['mask'])):
-                if getattr(self, 'strict_features', False):
-                    raise FileNotFoundError(f'Missing required patch inputs: {paths}')
-                print(f"Warning: missing files for patch: {paths}")
+            # Historical cellular tiles are rebuilt from the registered H&E at access time.
+            missing = [str(v) for v in paths.values() if not v.is_file()]
+            if missing:
+                if self.strict_features:
+                    raise FileNotFoundError(f'Missing patch inputs: {missing}')
                 continue
+            names_path = paths['scgpt'].with_suffix('.genes.txt')
+            if not names_path.is_file():
+                raise FileNotFoundError(f'{names_path}: missing selected feature names')
+            names = np.loadtxt(names_path, dtype=str, ndmin=1).tolist()
+            if names != self.sub_gene_info[key]['namesN']:
+                raise ValueError(f'{names_path}: feature gene order differs from ST target order')
+            self.patch_paths.append(paths)
+            loaded.append((cls_name, sub, layer_name, patch_id))
+        self.selected_patches = loaded
+        if not loaded:
+            raise ValueError('No valid patches indexed. Check data_root, class and required files.')
 
-            # 稀疏矩阵读取与截取
-            sr = sp.load_npz(paths['hr'])[:, idxN].toarray().reshape(256, 256, -1).transpose(2, 0, 1)
-            spot = sp.load_npz(paths['spot'])[:, idxN].toarray().reshape(26, 26, -1).transpose(2, 0, 1)
+    def _precompute_gene_index_maps(self):
+        self.gene_index_map = np.broadcast_to(
+            (np.arange(self.gene_num, dtype=np.float32) / self.gene_num)[:, None, None],
+            (self.gene_num, 256, 256)).copy()
 
-            # 影像加载
-            wsi5120 = np.load(paths['wsi5120']).transpose(2, 0, 1)
-            # Rebuild the row-major cellular grid; historical files were entropy-sorted.
-            wsi320 = wsi5120.reshape(3, 16, 16, 16, 16).transpose(1, 3, 0, 2, 4).reshape(256, 3, 16, 16)
-            wsimask = np.load(paths['mask']).transpose(2, 0, 1)
-            if not len(wsimask):
-                wsimask = np.zeros((1, 256, 256), dtype=np.float32)
+    def __len__(self):
+        return len(self.selected_patches)
 
-            sr_list.append(sr.astype(np.float32))
-            spot_list.append(spot.astype(np.float32))
-            wsi5120_list.append(wsi5120.astype(np.float32))
-            wsi320_list.append(wsi320.astype(np.float32))
-            wsimask_list.append(wsimask.astype(np.float32))
-
-            # 记录所属类的 sc 参考（直接存 adata 引用）
-            sc_list.append(self.sub_gene_info[key]["reference"])
-
-            # ---------- 读取 scGPT ----------
-            scgpt_dir = os.path.join(base, 'spot_ST', 'extract', layer_name, patch_id, 'scgpt_data')
-            gene_names = self.sub_gene_info[key]['namesN']
-            scgpt_embed = load_scgpt_embedding(scgpt_dir, gene_names, gene_start=self.gene_start)
-            scgpt_list.append(scgpt_embed)
-
-            # ---------- 新增：读取 pre_he ----------
-            pre_he_path = os.path.join(base, 'WSI', 'extract', layer_name, patch_id, 'pre_he.npy')
-            pre_he = load_pre_he(pre_he_path)
-            if pre_he is None:
-                raise FileNotFoundError(f'Missing authentic histology features: {pre_he_path}')
-            prehe_list.append(pre_he)
-            complexity_path = os.path.join(base, 'WSI', 'extract', layer_name, patch_id, 'complexity_grid.npy')
-            if not os.path.isfile(complexity_path):
-                raise FileNotFoundError(f'{complexity_path}: score registered native H&E and cell labels')
-            complexity = np.load(complexity_path).astype(np.float32)
-            if complexity.shape != (16, 16) or not np.isfinite(complexity).all() or np.any((complexity < 0) | (complexity > 1)):
-                raise ValueError(f'{complexity_path}: expected finite [16,16] scores in [0,1]')
-            complexity_list.append(complexity)
-            loaded_patches.append((cls_name, sub, layer_name, patch_id))
-        # 转为数组
-        self.selected_patches = loaded_patches
-        self.SR_ST_all = np.asarray(sr_list, dtype=np.float32)
-        self.spot_ST_all = np.asarray(spot_list, dtype=np.float32)
-        self.WSI_5120_all = np.asarray(wsi5120_list, dtype=np.float32)
-        self.WSI_320_all = np.asarray(wsi320_list, dtype=np.float32)
-        self.WSI_mask_all = np.asarray(wsimask_list, dtype=np.float32)
-        self.sc_all = sc_list
-        self.scgpt_list = scgpt_list
-        self.prehe_list = prehe_list
-        self.complexity_list = complexity_list
-
-        if len(self.SR_ST_all) == 0:
-            raise ValueError("No valid patches loaded. Check data_root, tissue class and required files.")
-
-    # ===================================================== #
-    # 归一化（保持）
-    # ===================================================== #
-    def _normalize_data(self):
-        for i in range(self.spot_ST_all.shape[0]):
-            data = self.spot_ST_all[i]
-            mins = data.min(axis=(1, 2), keepdims=True)
-            maxs = data.max(axis=(1, 2), keepdims=True)
-            denom = maxs - mins + 1e-8
-            self.spot_ST_all[i] = (data - mins) / denom
-        patch_max = np.max(self.SR_ST_all, axis=(1, 2, 3))
-        patch_max[patch_max == 0] = 1.0
-        self.patch_scale = patch_max.astype(np.float32)
-        self.SR_ST_all = self.SR_ST_all / patch_max[:, None, None, None]
+    def __getitem__(self, idx):
+        patch = self.selected_patches[idx]
+        cls_name, sub = patch[:2]
+        info = self.sub_gene_info[(cls_name, sub)]
+        paths = self.patch_paths[idx]
+        channels = info['idxN']
+        hr = sp.load_npz(paths['hr'])[:, channels].toarray().reshape(256, 256, -1).transpose(2, 0, 1).astype(np.float32)
+        spot = sp.load_npz(paths['spot'])[:, channels].toarray().reshape(26, 26, -1).transpose(2, 0, 1).astype(np.float32)
+        scale = float(max(hr.max(), 1.0))
+        hr /= scale
+        low, high = spot.min((1, 2), keepdims=True), spot.max((1, 2), keepdims=True)
+        spot = (spot - low) / (high - low + 1e-8)
+        he = np.load(paths['wsi'])
+        if he.shape != (256, 256, 3):
+            raise ValueError(f'{paths["wsi"]}: expected registered [256,256,3] H&E')
+        he = he.transpose(2, 0, 1).astype(np.float32)
+        cells = he.reshape(3, 16, 16, 16, 16).transpose(1, 3, 0, 2, 4).reshape(256, 3, 16, 16)
+        mask = np.load(paths['mask'])
+        if mask.ndim != 3 or mask.shape[:2] != (256, 256) or mask.shape[2] == 0:
+            raise ValueError(f'{paths["mask"]}: expected nonempty [256,256,cells]')
+        mask = mask.transpose(2, 0, 1).astype(np.float32)
+        scgpt = np.load(paths['scgpt']).astype(np.float32)
+        pre_he = np.load(paths['pre_he']).astype(np.float32)
+        complexity = np.load(paths['complexity']).astype(np.float32)
+        if (scgpt.shape != (512, 26, 26) or pre_he.shape != (257, 1536) or
+                complexity.shape != (16, 16) or not np.isfinite(complexity).all() or
+                np.any((complexity < 0) | (complexity > 1))):
+            raise ValueError(f'{patch}: invalid feature or complexity shape/range')
+        if self.strict_features and (not np.isfinite(scgpt).all() or not np.isfinite(pre_he).all() or
+                                     not np.any(scgpt) or not np.any(pre_he)):
+            raise ValueError(f'{patch}: nonfinite or placeholder pretrained features')
+        return (hr, spot, he, cells, info['idxN'].astype(np.float32), self.gene_index_map,
+                self.metadata_features[(cls_name, sub)], torch.tensor(scale, dtype=torch.float32),
+                self._coexpression_features(cls_name, info['namesN']), mask,
+                torch.as_tensor(info['reference'], dtype=torch.float32), scgpt, pre_he, complexity,
+                torch.tensor(self.sample_resolution[(cls_name, sub)], dtype=torch.float32))
 
     # ===================================================== #
     # BERT 元数据（保持）
@@ -407,56 +402,6 @@ class Data_all(Dataset):
         # The frozen text encoder is needed only during preparation.
         del self.model
         del self.tokenizer
-
-    # ===================================================== #
-    # Gene index maps（保持）
-    # ===================================================== #
-    def _precompute_gene_index_maps(self):
-        N = len(self.SR_ST_all)
-        self.gene_index_maps_all = np.zeros((N, self.gene_num, 256, 256), dtype=np.float32)
-        for i in range(N):
-            for j in range(self.gene_num):
-                self.gene_index_maps_all[i, j] = np.full((256, 256), j / self.gene_num, dtype=np.float32)
-
-    # ===================================================== #
-    # Dataset 接口
-    # ===================================================== #
-    def __len__(self):
-        return len(self.SR_ST_all)
-
-    def __getitem__(self, idx):
-        """
-        返回：
-        - SR_ST[ C,256,256 ], spot_ST[ C,26,26 ], WSI_5120[ 3,256,256 ], WSI_320[ T,3,16,16 ]
-        - gene_index_maps[ C,256,256 ], metadata_feature[768], patch_scale(float tensor)
-        - coexpression memory[ C,64 ]（当前基因名对应的矩阵行）
-        - WSI_mask[ M,256,256 ]
-        - sc_item: 当前基因顺序的参考细胞表达张量
-        - complexity: 原生分辨率形态复杂度网格 [16,16]
-        """
-        cls_name = self.selected_patches[idx][0]
-        sample_key = self.selected_patches[idx][:2]
-        co_expression = self._coexpression_features(cls_name, self.sub_gene_info[sample_key]['namesN'])
-
-        patch_scale = torch.tensor(self.patch_scale[idx], dtype=torch.float32)
-        sc_item = torch.as_tensor(self.sc_all[idx], dtype=torch.float32)
-
-        return (
-            self.SR_ST_all[idx],
-            self.spot_ST_all[idx],
-            self.WSI_5120_all[idx],
-            self.WSI_320_all[idx],
-            self.sub_gene_info[sample_key]['idxN'].astype(np.float32),
-            self.gene_index_maps_all[idx],
-            self.metadata_features[self.selected_patches[idx][:2]],
-            patch_scale,
-            co_expression,
-            self.WSI_mask_all[idx],
-            sc_item,
-            self.scgpt_list[idx],
-            self.prehe_list[idx],
-            self.complexity_list[idx]
-        )
 
 def load_scgpt_embedding(scgpt_dir, gene_names, gene_start=0):
     """One authentic spot embedding map; validate its selected gene names."""

@@ -1,4 +1,5 @@
 """Small synthetic fixtures for gene identity, offsets and skipped patch indices."""
+import json
 import tempfile
 import unittest
 from pathlib import Path
@@ -95,16 +96,23 @@ class DataChecks(unittest.TestCase):
             np.save(features/'1to5.npy', np.ones((512,26,26),np.float32))
             genes = [f'g{i}' for i in range(5)]
             np.savetxt(features/'1to5.genes.txt', genes, fmt='%s')
+            (base/'st_resolution.json').write_text(json.dumps({
+                'original_st_bin_um': 10.0,
+                'source': 'fixture 2560 um field / 256 measured bins'}))
             data = Data_all.__new__(Data_all)
             data.gene_start = 0
+            data.gene_num = 5
+            data.strict_features = False
             data.selected_patches = [('missing','sample','layer','p'), ('valid','sample','layer','p')]
             data.sub_gene_info = {('valid','sample'):dict(idxN=np.arange(5),namesN=genes,
                                                         reference=np.full((3,5),7,np.float32))}
             data._load_data(temp)
             self.assertEqual(data.selected_patches, [('valid','sample','layer','p')])
-            self.assertEqual(len(data.SR_ST_all), 1)
-            np.testing.assert_array_equal(data.sc_all[0], np.full((3,5),7,np.float32))
-            np.testing.assert_array_equal(data.complexity_list[0], np.full((16,16),.25,np.float32))
+            self.assertEqual(len(data.patch_paths), 1)
+            self.assertFalse(hasattr(data, 'SR_ST_all'))
+            self.assertEqual(data.sample_resolution[('valid','sample')], 10.0)
+            self.assertEqual(data.sample_resolution_source[('valid','sample')],
+                             'fixture 2560 um field / 256 measured bins')
 
 
 if __name__ == '__main__':

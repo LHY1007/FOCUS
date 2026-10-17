@@ -1,6 +1,6 @@
 {
   "artifact": "focus-5gene.pt",
-  "sha256": "acc54e13adbf2249a08eb2c19fa5ae6bcb55ddb9fdf0e310adc56066cb5320b9",
+  "sha256": "618ba53577dcdecd2c383f34dd869e1f5e5fce19b278c5509eeb70576f5616e7",
   "bytes": 49095803,
   "genes": [
     "Ttn",
@@ -25,7 +25,7 @@
       "disentanglement": 0.1,
       "cell_consistency": 0.1
     },
-    "training_config_sha256": "627718783d66a69412d8c6d0427f1beeee22c7b8d909601b3ca3d5ebfc135dbf",
+    "training_config_sha256": "20888572c03a97c6576af15f272cac796a4b399b4ba2f4390c8da8557f675054",
     "optimizer_state": "saved outside repository beside original training checkpoint, not bundled"
   },
   "conditions": {
@@ -36,9 +36,14 @@
     "scgpt": "official spatial v1 with 153 of 153 required encoder tensors matched; mouse-to-human ortholog mapping",
     "gigapath": "official gated tile encoder, 257 native H&E vectors",
     "biobert": "pinned official v1.1 frozen; actual metadata plus five genes",
-    "coexpression": "existing read-only 50-gene prior from same training tile; not independent"
+    "coexpression": "existing read-only 50-gene prior from same training tile; not independent",
+    "task_diagnostics": "spatial_v1: measured capture sparsity, ST/H&E edge mismatch and between-cell expression mixing; physical resolution read from per-sample st_resolution.json",
+    "original_st_resolution": {
+      "um_per_bin": 10.0,
+      "source": "Registered pre-degradation HR_ST_256.npz: 2560 um field / 256 bins; raw Xenium transcript positions are finer"
+    }
   },
-  "demo_input_provenance_sha256": "79ed8d51bff3d02edd648c5add76f109fc4ac3e3edcee5577305efe2cbe46a38",
+  "demo_input_provenance_sha256": "4c36c1dc50c82ba405870ccb8f8a137b59b99d45c166c5dff8e722621d8ea4df",
   "expected_output": "one five-channel normalized-expression NPZ and five-panel PNG after 1000 DDIM reverse steps",
   "limitations": [
     "single training tile; no held-out accuracy",

@@ -1,6 +1,6 @@
 # Changelog
 
-## Unreleased (package version 0.3.0)
+## 0.3.0 - 2026-10-17
 
 - Replace the default proxy-conditioned ten-pair demonstration with one traced,
   registered 10x mouse-pup H&E/ST tile and genuine official cell and nuclear polygons,
@@ -18,7 +18,9 @@
   on the real-condition training tile; provenance records the single donor and
   absence of an independent test.
 - Compute formal PCC per gene and retain undefined values for constant channels; make DDPM and DDIM
-  sampler choices explicit.
+  sampler choices explicit. Add per-prediction physical-source records and a paired five-gene metrics exporter.
+- Read image, ST, mask and encoder arrays on demand; pad variable cell counts in batches. Use
+  spatial capture, alignment and cell-mixing diagnostics with measured per-sample ST resolution.
 - The earlier single-gene examples remain documented below as archived versions.
 
 ## 0.2.0 - 2026-10-16

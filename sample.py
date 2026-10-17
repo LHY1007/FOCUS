@@ -6,7 +6,7 @@ process over the test split and reports the per-gene-group metrics.
     python sample.py
 """
 
-import os, re, glob, gc, yaml, torch
+import os, re, glob, gc, json, yaml, torch
 import numpy as np
 from pathlib import Path
 import torch.nn.functional as F
@@ -91,6 +91,12 @@ def main(Output):
                     'he_feature_dim', 'st_feature_dim', 'diffusion_steps', 'noise_schedule'):
             if getattr(args, key) != trained[key]:
                 raise ValueError(f'{model_dir}: {key} differs between training and inference')
+        if trained.get('activation_diagnostics_version') != 'spatial_v1':
+            raise ValueError(f'{model_dir}: checkpoint predates spatial task diagnostics')
+        if not isinstance(trained.get('st_resolution_by_sample'), dict):
+            raise ValueError(f'{model_dir}: missing source ST resolution record')
+        if not isinstance(trained.get('st_resolution_sources'), dict):
+            raise ValueError(f'{model_dir}: missing source ST resolution provenance')
         if trained['gene_start'] != start_gene:
             raise ValueError(f'{model_dir}: gene group name and saved offset disagree')
         script_name = f"{args.dataset_use}/{dir_name}"
@@ -138,6 +144,7 @@ def main(Output):
                 scgpt,
                 pre_he,
                 complexity,
+                original_st_bin_um,
             ) = batch
 
             last_HQST = noise_like(SR_ST) * args.noise_sigma
@@ -156,6 +163,7 @@ def main(Output):
                 "scgpt": scgpt.to(dist_util.dev()),
                 "pre_he": pre_he.to(dist_util.dev()),
                 "complexity": complexity.to(dist_util.dev()),
+                "original_st_bin_um": original_st_bin_um.to(dist_util.dev()),
                 "last_HQST": last_HQST.to(dist_util.dev()),
 
 
@@ -181,6 +189,19 @@ def main(Output):
             if not np.isfinite(pred).all():
                 raise RuntimeError("Non-finite generated expression values")
             np.save(os.path.join(results_dir, f"prediction_{j}.npy"), pred)
+            cls_name, sample_id, layer, patch_id = test_dataset.selected_patches[j]
+            sample_key = cls_name, sample_id
+            with open(os.path.join(results_dir, f"prediction_{j}.json"), "w", encoding="utf-8") as f:
+                json.dump({
+                    "tissue": cls_name, "sample_id": sample_id,
+                    "layer": layer, "patch_id": patch_id,
+                    "genes": test_dataset.sub_gene_info[sample_key]["namesN"],
+                    "original_st_bin_um": test_dataset.sample_resolution[sample_key],
+                    "resolution_source": test_dataset.sample_resolution_source[sample_key],
+                    "checkpoint": model_path,
+                    "sampling_method": method,
+                    "reverse_steps": diffusion.num_timesteps,
+                }, f, indent=2)
 
 
 

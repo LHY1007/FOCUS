@@ -38,6 +38,7 @@ limits are in [real_data.md](real_data.md) and `demos/input/provenance.json`.
 | `pre_he` | (257,1536) | Official Prov-GigaPath tile embeddings from native H&E |
 | `scale_gt` | scalar | Legacy compatibility input, not used as count ground truth |
 | `genes` | (5,) string | Exact target order |
+| `original_st_bin_um` | scalar | Measured pre-degradation ST bin size, in µm, from sample provenance |
 
 `demos/output/3_10.npz` stores finite float32 `prediction` with shape
 (5,256,256), the five names, 1,000-step setting and “training-tile
@@ -45,8 +46,20 @@ reconstruction” label. Its PNG is a 256×1280 five-panel grayscale strip:
 `round(255*clip(prediction,0,1))` joined in gene order. These normalized model
 values are not transcript counts. Check `demos/input/3_10.npz` for the separately
 stored observed count arrays. Only one pair is bundled to keep the example small.
-The validated 1,000-step run took 151.90 s on a CB4 RTX 6000 Ada GPU. Its
+The validated 1,000-step run took 148.02 s on one CB4 RTX 6000 Ada 48 GiB GPU,
+including loading and writing. Peak CUDA memory was 0.43 GiB allocated and 0.70 GiB
+reserved by PyTorch; this is not a measured minimum VRAM requirement. Its
 preview is visibly speckled; do not use it as evidence of expression fidelity.
+
+To compare this paired output with the observed five-gene counts, run:
+
+```bash
+python -m evaluation.evaluate_pair --observed demos/input/3_10.npz --prediction demos/output/3_10.npz --output demos/output/metrics.json
+```
+
+The JSON reports each gene separately, the observed UMI total, and normalized RMSE,
+SSIM and PCC. The demo is a reconstruction of its training tile; these metrics are
+not an independent accuracy estimate. Constant channels have undefined PCC (`null`).
 
 ## Prepare a new experiment
 
@@ -58,6 +71,11 @@ preview is visibly speckled; do not use it as evidence of expression fidelity.
    100 um/pixel. For alignment evaluation, perturb only after reference registration and exclude
    reference landmarks/transforms from model inputs. Platform raw inputs are described in
    `data_preprocessing/README.md`.
+   Record the measured **pre-degradation** ST bin width and its derivation in
+   `{tissue}/{sample}/st_resolution.json`, for example
+   `{"original_st_bin_um": 10.0, "source": "2560 um field / 256 HR bins"}`.
+   The source bin width controls the resolution gate; the 26×26 model input
+   dimensions do not substitute for physical measurement.
 3. Apply the supplement's ST filtering: remove genes expressed in fewer than 2% of pixels; discard
    pixels expressing fewer than 2% of genes. Keep grid positions as zero rows and retain the same
    gene columns in HR and LQ maps. Record the retained names and column indices.

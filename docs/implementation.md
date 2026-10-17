@@ -8,7 +8,12 @@ and [demo use](usage.md) provide the corresponding detail.
 
 ## Data and conditioning
 
-`Data_all._load_data` selects each gene group using `gene_order.npy` and its ordered
+`Data_all._load_data` indexes patch paths, while `__getitem__` reads the requested
+HR/LQ ST, H&E, masks and encoder features. A per-sample `st_resolution.json`
+records the measured pre-degradation ST bin width and its source; the shared
+backbone activates resolution enhancement only above 10 µm. Batch collation
+pads variable cell-mask counts, and zero-area padding is excluded from cell
+statistics. The loader selects each gene group using `gene_order.npy` and its ordered
 `gene_name.txt`, then retrieves the same named genes from the scRNA reference.
 The bundled Xenium tile uses Ttn, Car3, Des, Cav1 and Myoz2, at original panel
 columns 365, 52, 116, 53 and 234. The 256-cell P0 muscle reference retains source
@@ -41,13 +46,23 @@ weight hashes and access terms are in [real_data.md](real_data.md).
 The active path is `train.py` → `train_part.train_fun` → `TrainLoop` →
 `GaussianDiffusion.training_losses` → `UNetModel._forward_manuscript`.
 `sample.py` and `demos/run.py` use the same U-Net architecture. The sensitivity,
-alignment and cell-fidelity activation heads each score their current input;
+alignment and cell-fidelity activation heads each score their current input.
+Their software diagnostic maps use observed ST sparsity, spatial ST/H&E edge
+disagreement and between-cell expression mixing, respectively. Initial head
+boundaries are calibrated at 0.05, 0.40 and 0.25 on these bounded diagnostics;
+the linear heads can adapt through the task losses. These thresholds are current
+software choices, not recovered historical parameters. The activation scores
+are projected before expert execution;
 only scores greater than 0.5 run the corresponding expert. The coordinator
 cross-attends over active task tokens and applies FiLM to their features. The
 shared U-Net determines output resolution, so activating a task does not add an
 independent output head (Methods 1.6, pp. 35–36). Mixed-activation checks verify
 that disabled experts are skipped for the affected samples, while activation
-heads and coordinator retain training gradients.
+heads and coordinator retain training gradients when their experts are active.
+On the single bundled training tile, alignment and cell-fidelity head weights changed
+during 100 updates; the sensitivity head stayed at its initial calibration because its
+expert was inactive. Controlled input changes verify each head’s intended direction,
+not diagnostic accuracy on independently labelled defects.
 
 The sensitivity branch projects the name-aligned scRNA reference by Sinkhorn
 transport into ST features. `HEGuidedRegionalAttention` takes registered RGB
@@ -69,7 +84,7 @@ nonzero structure and cell-consistency terms.
 disentanglement and cell-consistency terms to the Table S9 weights
 `0.15/0.20/0.10/0.10` (Methods 3.1, p. 38; Supplementary Table S9, p. 23).
 The bundled training run recorded all four terms through update 100; at its last
-update, `charb=.316`, `struct=.00856`, `dis=-2`, and `consis=7.22e-6`.
+update, `charb=.312`, `struct=.00805`, `dis=-2`, and `consis=5.41e-6`.
 The disentanglement term is signed, so the total need not be positive.
 
 The model predicts five noise channels with fixed diffusion variance. Its
@@ -77,7 +92,7 @@ bundled checkpoint strictly matches 352 state keys, including an output
 weight of shape `(5,128,3,3)`. Forward diffusion has 1,000 steps. Formal
 sampling defaults to 1,000 DDPM steps; the demo uses 1,000 DDIM steps and
 labels any shorter `--steps N` run as an execution check (Methods 1.1 and 3.1).
-The full real-condition demo produced finite `(5,256,256)` output in 151.90 s;
+The full real-condition demo produces finite `(5,256,256)` output;
 the five-panel PNG exactly matches the NPZ display transform.
 
 ## Training, adaptation and scope
@@ -105,7 +120,10 @@ updates on one public mouse-pup training tile, batch size one and learning rate
 accuracy estimate; its output is visibly speckled and should not be treated as
 a validated expression reconstruction. The supplied software tests cover data
 mapping, conditioning, gradients, adaptation, sampling, package builds and
-installation. Full 2,000-epoch training, the manuscript's quantitative figures,
+installation. A paired NPZ evaluator exports per-gene normalized RMSE, SSIM
+and PCC plus observed UMI totals. On the bundled training-tile reconstruction,
+mean per-gene RMSE was 0.525, SSIM 0.0032 and PCC -0.0113; these values show no
+validated reconstruction accuracy. Full 2,000-epoch training, the manuscript's quantitative figures,
 third-party fresh installation and the separate mask/co-expression generators
 have not been independently reproduced here. `downstream/` is maintained
 separately; its trajectory documentation and annotation comparisons have not

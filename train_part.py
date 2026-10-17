@@ -52,15 +52,29 @@ def train_fun(args, log_dir, n, pre_model_dir):
         stamp = time.strftime('%Y%m%d-%H%M%S') + f'-{time.time_ns() % 1000000000:09d}'
         save_dir = Path(log_dir) / args.dataset_use / f'{args.SR_times}X' / f'G{gene_start}-{gene_end}_{stamp}'
         logger.configure(dir=str(save_dir))
-        # Save the actual runtime configuration beside the checkpoint.
-        with (save_dir / 'config.yaml').open('w', encoding='utf-8') as f:
-            yaml.safe_dump({**vars(args), 'gene_start': gene_start}, f)
         data = load_data(
             data_root=args.data_root, dataset_use=args.dataset_use, status='Train',
             SR_times=args.SR_times, gene_num=args.gene_num, all_gene=args.all_gene,
             pre_model_dir=pre_model_dir, gene_start=gene_start,
             split_manifest=args.split_manifest, split=args.split,
             reference_cells=args.reference_cells, seed=seed)
+        resolution_by_sample = {f'{cls}/{sub}': value
+                                for (cls, sub), value in data.sample_resolution.items()}
+        resolution_sources = {f'{cls}/{sub}': source
+                              for (cls, sub), source in data.sample_resolution_source.items()}
+        if resume_checkpoint:
+            saved = Path(resume_checkpoint).parent / 'config.yaml'
+            with saved.open(encoding='utf-8') as f:
+                previous = yaml.safe_load(f)
+            if (previous.get('activation_diagnostics_version') != 'spatial_v1' or
+                    previous.get('st_resolution_by_sample') != resolution_by_sample or
+                    previous.get('st_resolution_sources') != resolution_sources):
+                raise ValueError('Resume checkpoint has different task diagnostics or source ST resolutions')
+        with (save_dir / 'config.yaml').open('w', encoding='utf-8') as f:
+            yaml.safe_dump({**vars(args), 'gene_start': gene_start,
+                            'activation_diagnostics_version': 'spatial_v1',
+                            'st_resolution_by_sample': resolution_by_sample,
+                            'st_resolution_sources': resolution_sources}, f)
         import json
         with (save_dir / 'reference_selection.json').open('w', encoding='utf-8') as f:
             json.dump(data.reference_selection, f, indent=2)

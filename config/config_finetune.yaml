@@ -56,3 +56,5 @@ finetune: true
 lora_rank: 8
 init_checkpoint: models/foundation.pt
 max_steps: 0
+
+# Per-sample original_st_bin_um is required in st_resolution.json; no platform fallback.

@@ -144,14 +144,73 @@ class ActiveTaskCoordinator(nn.Module):
         return torch.cat(out)
 
 
+def resolution_gate(original_st_bin_um):
+    """Methods 1.6: activate for measured input ST bins coarser than 10 um."""
+    if original_st_bin_um is None or not torch.is_tensor(original_st_bin_um):
+        raise ValueError('Provide per-sample original_st_bin_um from the source ST coordinates')
+    if not torch.isfinite(original_st_bin_um).all() or (original_st_bin_um <= 0).any():
+        raise ValueError('original_st_bin_um must contain finite positive values')
+    return original_st_bin_um.reshape(-1) > 10.0
+
+
+def task_diagnostics(low_res, he, reference, masks):
+    """Input-derived capture, spatial alignment and cell-mixing indicators.
+
+    These are calibrated software diagnostics, not historical activation labels.
+    Every feature is bounded in [0,1] and retains spatial information before GAP.
+    """
+    if reference is None or masks.ndim != 4:
+        raise ValueError('Task diagnostics require reference and [B,M,H,W] cell masks')
+    b, _, h, w = low_res.shape
+    valid = masks.flatten(2).sum(-1) > 0
+    if not valid.any(1).all():
+        raise ValueError('Each sample needs at least one nonempty cell mask')
+    capture = (low_res <= 0).float().mean((1, 2, 3))
+    ref_abundance = reference.mean((1, 2)).clamp_min(0)
+    # The reference mean is contextual; missing capture in the observed ST is primary.
+    reference_context = ref_abundance / (1 + ref_abundance)
+
+    st = low_res.mean(1, keepdim=True)
+    rgb = he.mean(1, keepdim=True)
+    rgb = F.interpolate(rgb, size=(h, w), mode='area')
+    def edge(x):
+        dx = x[..., 1:] - x[..., :-1]
+        dy = x[..., 1:, :] - x[..., :-1, :]
+        return F.pad(dx.abs(), (0, 1)) + F.pad(dy.abs(), (0, 0, 0, 1))
+    st_edge, he_edge = edge(st).flatten(1), edge(rgb).flatten(1)
+    st_edge = st_edge - st_edge.mean(1, keepdim=True)
+    he_edge = he_edge - he_edge.mean(1, keepdim=True)
+    spatial_match = F.cosine_similarity(st_edge, he_edge, dim=1, eps=1e-8)
+    alignment = ((1 - spatial_match) / 2).clamp(0, 1)
+    edge_context = he_edge.square().mean(1).sqrt()
+    edge_context = edge_context / (1 + edge_context)
+
+    # Compare expression means within distinct observed cell masks. Padded masks
+    # have zero area and cannot contribute to the cell statistic.
+    pooled_masks = F.interpolate(masks.float(), size=(h, w), mode='area')
+    mass = pooled_masks.sum((2, 3))
+    cell_means = torch.einsum('bmhw,bghw->bmg', pooled_masks, low_res) / mass.clamp_min(1e-8)[..., None]
+    count = valid.sum(1).clamp_min(1).float()
+    mean = (cell_means * valid[..., None]).sum(1) / count[:, None]
+    between = (((cell_means - mean[:, None]).square() * valid[..., None]).sum((1, 2)) /
+               (count * low_res.shape[1]))
+    pixel_var = low_res.var((2, 3), unbiased=False).mean(1)
+    mixing = (1 - between / pixel_var.clamp_min(1e-8)).clamp(0, 1)
+    mixing = torch.where(pixel_var < 1e-7, torch.ones_like(mixing), mixing)
+    cell_context = (count / (count + 10)).clamp(0, 1)
+    return torch.stack((capture, reference_context), 1), torch.stack((alignment, edge_context), 1), torch.stack((mixing, cell_context), 1)
+
+
 class ManuscriptConditioning(nn.Module):
     def __init__(self, channels, genes, he_feature_dim=1536, st_feature_dim=512):
         super().__init__()
-        self.activation = nn.ModuleList([nn.Linear(2 * genes, 1), nn.Linear(genes + 3, 1),
-                                         nn.Linear(genes + 3, 1)])
-        for head in self.activation:
-            nn.init.normal_(head.weight, std=0.01)
-            nn.init.constant_(head.bias, 0.1)
+        self.activation = nn.ModuleList([nn.Linear(2, 1) for _ in range(3)])
+        for head, threshold in zip(self.activation, (0.05, 0.40, 0.25)):
+            # Initial diagnostic boundaries are software calibration choices.
+            # The second input is context that can be learned from task losses.
+            nn.init.zeros_(head.weight)
+            head.weight.data[0, 0] = 8.0
+            nn.init.constant_(head.bias, -8.0 * threshold)
         self.he_match = nn.Linear(he_feature_dim, channels)
         self.st_match = nn.Conv2d(st_feature_dim, channels, 1)
         self.alignment = MorphologyAlignment(channels)
@@ -165,11 +224,7 @@ class ManuscriptConditioning(nn.Module):
         self.progress = 0.0
 
     def task_scores(self, low_res, he, reference, masks):
-        mean_st = low_res.mean((2, 3))
-        ref = reference.mean(1)
-        cellular = (he * masks.amax(1, keepdim=True).clamp(0, 1)).mean((2, 3))
-        inputs = [torch.cat([mean_st, ref], 1), torch.cat([mean_st, he.mean((2, 3))], 1),
-                  torch.cat([mean_st, cellular], 1)]
+        inputs = task_diagnostics(low_res, he, reference, masks)
         scores = torch.cat([head(x) for head, x in zip(self.activation, inputs)], 1).sigmoid()
         allowed = torch.tensor(self.allowed_tasks, device=scores.device, dtype=torch.bool)
         return scores, (scores > 0.5) & allowed[None]
