@@ -1,0 +1,39 @@
+--- a/scgpt_spatial/__init__.py
++++ b/scgpt_spatial/__init__.py
+@@ -4,5 +4,5 @@
+ 
+ logger = logging.getLogger("scGPT-spatial")
+-from . import model, tokenizer, utils, tasks
++from . import model, tokenizer, tasks
+ from .data_collator import DataCollator
+ from .data_sampler import SubsetsBatchSampler
+--- a/scgpt_spatial/model/model.py
++++ b/scgpt_spatial/model/model.py
+@@ -10,11 +10,17 @@
+ import torch.nn.functional as F
+ from torch.nn import TransformerEncoder, TransformerEncoderLayer
+ from torch.distributions import Bernoulli
+-from flash_attn.flash_attention import FlashMHA
++try:
++    from flash_attn.flash_attention import FlashMHA
++except ImportError:
++    FlashMHA = None
+ from tqdm import trange
+ 
+ from .grad_reverse import grad_reverse
+-from .flash_layers import FlashscGPTLayer, FlashscGPTGenerator
++try:
++    from .flash_layers import FlashscGPTLayer, FlashscGPTGenerator
++except ImportError:
++    FlashscGPTLayer = FlashscGPTGenerator = None
+ from .MoE import MoELayer
+ 
+ class TransformerModel(nn.Module):
+@@ -51,6 +57,7 @@
+     ):
+         super().__init__()
+         self.model_type = "Transformer"
++        self.use_fast_transformer = use_fast_transformer
+         self.d_model = d_model
+         self.do_dab = do_dab
+         self.ecs_threshold = ecs_threshold

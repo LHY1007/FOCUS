@@ -84,7 +84,7 @@ The equation mapping and explicit choices are listed in [reproduction.md](docs/r
 
 ### Environment Setup
 
-The source package is version **0.2.0**. With a supported Python environment and a CUDA-compatible
+The source package is version **0.3.0**. With a supported Python environment and a CUDA-compatible
 PyTorch installation, install core dependencies and the package from this checkout:
 
 ```bash
@@ -172,28 +172,33 @@ Run from the repository root after installing dependencies:
 python demos/run.py
 ```
 
-The five-gene weight is bundled at `demos/focus-5gene.pt`; no separate download is needed.
-The runner reads ten registered H&E PNG/NPZ pairs and jointly generates
-**Ttn, Car3, Des, Cav1 and Myoz2**. Each output NPZ contains a `(5,256,256)` float32 expression
-array and the five names. Each output PNG is a grayscale strip of five panels in that order,
-using one fixed [0,1] display range. Ten pairs produce ten PNGs and ten NPZs in `demos/output/`.
+The bundled five-gene weight (`demos/focus-5gene.pt`) reads **one real-condition,
+registered** H&E/ST tile from the public 10x Xenium mouse-pup sample. It jointly
+generates **Ttn, Car3, Des, Cav1 and Myoz2** using 1,000 DDIM reverse steps by
+default. `--steps N` is an explicitly shortened program check. The expected output
+is `demos/output/3_10.npz` with one finite `(5,256,256)` float32 prediction and
+`demos/output/3_10.png` with five grayscale panels. Measured transcript counts
+are separately stored in `demos/input/3_10.npz`; predictions are normalized
+expression values, not counts.
 
-The demo uses DDIM for 1,000 reverse steps by default, matching the manuscript step count. `--steps N` explicitly
-selects a shorter execution run. All ten pairs took **788.90 s (13 min 08.90 s)** on one
-CB4 RTX 6000 Ada GPU, including checkpoint loading and output writing.
+The validated 1,000-step run took **151.90 s** on one CB4 RTX 6000 Ada GPU,
+including model loading and output writing. Its preview is visibly speckled;
+the 100-update checkpoint has no demonstrated biological reconstruction accuracy.
 
-The H&E and ST come from public Xenium mouse-pup tiles. The demo retains proxy masks, an adult
-WMB reference and zero scGPT/GigaPath feature arrays. Its actual Xenium, mouse-pup and five-gene
-prompt was encoded with the pinned, frozen BioBERT v1.1 model. The new weight was trained from
-random initialization for 100 updates using the revised five-gene model and four-term loss.
-The exact spatial tile split and conditioning provenance are in
-[`demos/checkpoint_provenance.json`](demos/checkpoint_provenance.json).
-Full training uses authentic features and a matched
-reference, prepared as described in [usage.md](docs/usage.md).
+The real inputs contain official 10x cell and nuclear polygons, native H&E morphology
+complexity, a P0 muscle scRNA reference from an independent study, and genuine
+features extracted with official scGPT-spatial, Prov-GigaPath and frozen BioBERT
+weights. The existing gene co-expression prior was derived from this training
+tile. The checkpoint was trained from random initialization for **100 optimizer
+updates with batch size 1 on this same tile**. This demonstrates a complete
+five-gene path under real conditions; it is not an independent test or recovered
+manuscript checkpoint. [Demo details](docs/usage.md) and [exact source and
+preprocessing instructions](docs/real_data.md) distinguish the observed data,
+model output, access requirements and known limits.
 
 ### Documentation and contribution
 
-See [docs/](docs/index.md) for input/output definitions, a source-aligned algorithm outline and
+See [docs/](docs/index.md) for real data acquisition, input/output definitions, a source-aligned algorithm outline and
 [software submission details](docs/software_submission.md). Contribution and release information
 are in [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
@@ -206,8 +211,8 @@ The example software packages listed in the Nature checklist are linked in
 GitHub Actions builds and checks the package on CPU. `.travis.yml`, `.pypirc` and `netlify.toml`
 are optional configuration files for Travis CI, PyPI and Netlify; these services are not enabled.
 
-The optional container recipe can be built with `docker build -t focus-st:0.2.0 .` and run with
-`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.2.0`.
+The optional container recipe can be built with `docker build -t focus-st:0.3.0 .` and run with
+`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.3.0`.
 The container requires the NVIDIA Container Toolkit.
 
 ### Generated channels
@@ -258,7 +263,7 @@ data_root/
 | `5120_to256.npy` | `(256, 256, 3)` uint8 | Registered H&E at 10 µm/px, downsampled from the native 0.5 µm/px tile |
 | `320_to16.npy` | `(256, 16, 16, 3)` uint8 | Historical preprocessing output; the full loader rebuilds the cellular grid in row-major order from the registered H&E image |
 | `cell_mask.npy` | `(256, 256, M)` | Cell segmentation masks |
-| `complexity_grid.npy` | `(16, 16)` float32 | Density and native H&E shape, size and texture score from existing cell-instance labels |
+| `complexity_grid.npy` | `(16, 16)` float32 | Density and native H&E nuclear shape, size and texture score from existing nuclear-instance labels |
 | `pre_he.npy` | `(257, 1536)` | Authentic Prov-GigaPath vectors: tissue tile followed by 256 row-major cellular tiles |
 | `scgpt_data/1to5.npy` | `(512, 26, 26)` | Authentic scGPT-spatial spot features; companion `1to5.genes.txt` identifies the five selected genes |
 | `{scRNA_data}.h5ad` | AnnData | Single-cell reference, one `.h5ad` per tissue type |
@@ -276,7 +281,7 @@ a missing or duplicate name raises an error. Groups use `1to5.npy`, `6to10.npy`,
 The loader also selects the current gene rows from the supplied co-expression matrix by name;
 it never assumes that the first 50 matrix rows describe every gene group. Prepare the `.genes.txt`
 sidecar from the exact gene order used to build that matrix; do not reorder matrix values.
-Score `complexity_grid.npy` from the registered native H&E and existing cell labels using
+Score `complexity_grid.npy` from the registered native H&E and existing nuclear labels using
 [`data_preprocessing/score_complexity.py`](data_preprocessing/score_complexity.py). The downsampled
 `cell_mask.npy` is insufficient for native subcellular shape and texture measurement.
 
@@ -304,13 +309,13 @@ Visium HD has no shared panel: it derives its gene order from the sample's own b
 The per-platform inputs, configuration variables, run order and known caveats are documented in
 [`data_preprocessing/README.md`](data_preprocessing/README.md).
 
-Steps that are *not* in `data_preprocessing/` and must be run separately:
+Additional inputs have separate generators or export helpers:
 
 | File | Produced by |
 | --- | --- |
 | `cell_mask.npy` | cell segmentation on the H&E patch; see [`downstream/matrix/bin2cell_pipeline.py`](downstream/matrix/bin2cell_pipeline.py) |
-| `pre_he.npy` | [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) H&E features |
-| `scgpt_data/` | [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) gene-expression embeddings |
+| `pre_he.npy` | Official [Prov-GigaPath](https://huggingface.co/prov-gigapath/prov-gigapath) H&E features exported by `data_preprocessing/export_conditioning.py` after gated access |
+| `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings exported by `data_preprocessing/export_conditioning.py` with an audited checkpoint |
 | `coexpression_matrix.npy` | spatial gene–gene co-expression computed across the cohort |
 | `gene_order.npy`, `gene_name.txt` | gene indices/names derived from `gene_groups.csv` |
 
@@ -349,12 +354,12 @@ are documented in [`downstream/README.md`](downstream/README.md).
 
 The manuscript reports **6,788 paired ST–H&E images** (over **1.7 million patches**) and over **5.8 million single-cell profiles** across ten ST platforms and 34 tissue contexts. Those data are not bundled in this repository. The link below points to the authors' external data location; check its current contents and permissions before planning a reproduction.
 
-Before training, organize accessible samples into the directory structure above and provide:
+The fully specified, tested mouse-pup route and exact public entrances are in [real data and preparation](docs/real_data.md). For other cohorts, organize accessible samples into the directory structure above and provide:
 
 - `HR_ST/` and `spot_ST/` — high- and low-resolution ST, with per-gene-group scGPT embeddings under `scgpt_data/`
 - `WSI/` — paired H&E patches at 20× and at multi-scale, existing cell segmentation masks, native morphology complexity grids and pre-extracted H&E features
-- `gene_order.npy` / `gene_name.txt` — the gene panel used for each sample
-- `sc/{scRNA_data}.h5ad` — the matched single-cell reference for the tissue
+- `gene_order.npy` / `gene_name.txt` — original source channel indices and corresponding ordered gene names for each sample
+- `sc/{scRNA_data}.h5ad` — an independent species, stage and tissue matched raw-count single-cell reference
 - `coexpression_matrix.npy` and ordered `coexpression_matrix.genes.txt` — the spatial gene–gene co-expression prior and its row names
 
 **External data location**: [curated cross-platform multimodal datasets](https://www.dropbox.com/scl/fo/8jipnyir34f1farrcgoxk/ADJbjaWY4V2Qv006H7j2j7w?rlkey=ca4buoejjn2d53rqjl5bii7yj&st=i68hdo96&dl=0)
@@ -481,7 +486,7 @@ FOCUS is evaluated using:
 2. **Missing Gene Files**
    - Check that `gene_order.npy` and `gene_name.txt` exist for each sample
    - Verify gene indices match across ST and scRNA-seq data
-   - Confirm the tissue name is listed in `_ALL_CLASSES` in `load_dataset.py`
+   - Confirm the tissue directory and its sample ID match `samples.csv`; the loader discovers tissue names from the selected directories
    - `HR_ST` and `spot_ST` must have the same gene dimension, since both are indexed with `gene_order`
 
 3. **Configuration file not found**

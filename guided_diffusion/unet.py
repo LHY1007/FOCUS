@@ -722,7 +722,7 @@ class UNetModel(nn.Module):
         
     def _forward_manuscript(self, x, timesteps, low_res, he, cellular, gene_class, gene_map,
                             prompt, coexpression, masks, reference, scgpt, pre_he, complexity=None):
-        from .manuscript import reference_projection, complexity_grid, cell_consistency
+        from .manuscript import reference_projection, cell_consistency
         core = self.manuscript
         # These derived conditions depend only on the current input tensors.
         # Retain their owners to prevent pointer reuse across different images.
@@ -793,18 +793,9 @@ class UNetModel(nn.Module):
         idx = torch.where(active[:, 2])[0]
         fused_he = hhe.clone()
         if len(idx):
-            key = ('complexity', tuple(idx.tolist()))
-            if complexity is not None:
-                if complexity.shape != (len(x), 16, 16):
-                    raise ValueError('Expected native morphology complexity [B,16,16]')
-                grid = complexity[idx]
-            elif cache is not None and key in cache:
-                grid = cache[key]
-            else:
-                # Only the disclosed software demo falls back to its proxy masks.
-                grid = complexity_grid(he[idx], masks[idx])
-                if cache is not None:
-                    cache[key] = grid
+            if complexity is None or complexity.shape != (len(x), 16, 16):
+                raise ValueError('Expected native morphology complexity [B,16,16] from registered H&E and native cell labels')
+            grid = complexity[idx]
             tiles = cellular[idx].to(x) / 255
             if tiles.shape[1] != grid.shape[1] * grid.shape[2]:
                 raise ValueError('Cellular H&E tiles must follow the row-major complexity grid')

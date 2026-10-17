@@ -10,7 +10,6 @@ backs the gene memory bank.  `load_data` is the factory used by `train.py`,
 import os
 import hashlib
 import numpy as np
-from matplotlib import pyplot as plt
 from torch.utils.data import DataLoader, Dataset
 import torch
 
@@ -109,6 +108,7 @@ class Data_all(Dataset):
 
         # ---- 每类加载 sc.h5ad（仅一个）
         self.sc_reference = {}
+        self.reference_selection = {}
         for cls_name in self.selected_classes:
             self.sc_reference[cls_name] = self._load_sc_reference(cls_name)
 
@@ -175,6 +175,7 @@ class Data_all(Dataset):
         if len(files) != 1:
             raise ValueError(f'{sc_dir}: expected exactly one tissue-matched reference h5ad')
         adata = sc.read_h5ad(files[0])
+        source_cells = adata.n_obs
         adata.var_names = adata.var_names.astype(str)
         if not adata.var_names.is_unique:
             raise ValueError(f'{files[0]}: duplicate gene names; resolve aliases before loading')
@@ -186,7 +187,14 @@ class Data_all(Dataset):
             raise ValueError(f'{files[0]} has {adata.n_obs} cells; set reference_cells between 1 and that count')
         rng = np.random.default_rng(self.seed)
         indices = np.sort(rng.choice(adata.n_obs, self.reference_cells, replace=False))
+        sampled_ids = adata.obs_names[indices].astype(str).tolist()
         adata = adata[indices].copy()
+        self.reference_selection[cls_name] = {
+            'source_file': str(files[0]), 'source_cells': int(source_cells),
+            'qc_nonzero_cells': int(len(counts[counts > 0])),
+            'selected_cells': int(len(indices)), 'seed': int(self.seed),
+            'sampled_cell_ids': sampled_ids,
+        }
         # Normalize over the complete reference gene universe, then select genes.
         sc.pp.normalize_total(adata, target_sum=1e4)
         sc.pp.log1p(adata)

@@ -35,4 +35,4 @@ Run 1,000 reverse diffusion steps by default.
 Validate finite five-channel output and preserve the selected gene order.
 ```
 
-The bundled software demo reads ten PNG/NPZ pairs and writes ten five-channel NPZ predictions and ten five-panel PNG previews. `python demos/run.py --steps N` requests a shorter run explicitly.
+The bundled software demo reads one registered real-condition PNG/NPZ pair from a training tile and writes one five-channel NPZ prediction and one five-panel PNG preview. Its observed ST arrays remain separate from model predictions. `python demos/run.py --steps N` requests a shorter run explicitly.

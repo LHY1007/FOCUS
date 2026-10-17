@@ -1,4 +1,4 @@
-"""Cell-mask measurements for Methods 4; this module does not generate masks."""
+"""Measurements from existing cell/nuclear labels; this module never segments images."""
 import math
 import numpy as np
 import torch
@@ -9,7 +9,9 @@ from skimage.measure import regionprops
 
 @torch.no_grad()
 def complexity_grid(he, masks, patch_size=16, pixel_size_um=10.0):
-    """Return [B,H/p,W/p] scores using cell density, shape, size and texture.
+    """Low-resolution diagnostic helper; production uses native nuclear labels below.
+
+    Return [B,H/p,W/p] scores using density, shape, size and texture.
 
     Descriptor deviations are mean absolute z scores relative to all cells in
     the same input tile. This normalization is a new, explicit implementation
@@ -77,10 +79,10 @@ def boundary_weights(masks, size):
 
 
 def complexity_from_native_labels(he, labels, pixel_size_um=0.5, grid_size=16):
-    """Methods 4 score from a registered native-resolution RGB image and cell labels.
+    """Methods 4 score from registered native H&E and existing nuclear labels.
 
     ``labels`` is an existing instance segmentation, with background zero and a
-    distinct positive integer for each cell. This function does not create masks.
+    distinct positive integer for each nucleus. This function does not create masks.
     """
     he, labels = np.asarray(he), np.asarray(labels)
     if he.ndim != 3 or he.shape[-1] != 3 or labels.shape != he.shape[:2]:

@@ -342,9 +342,10 @@ Within a tile, each 320 x 320 sub-patch must pass a tissue filter before it ente
 - mean luminance < 220, **and** mean red channel > 120.
 
 Accepted sub-patches are resized to 16 x 16, cycled until the stack holds 256 entries, and sorted by
-ascending **complexity score** — the Shannon entropy of the sub-patch's intensity histogram. This is
-the quantity the paper calls the complexity score, and the same ordering the Visium and Xenium
-branches apply.
+ascending **image entropy** in this historical preprocessing file. That entropy is **not** the
+manuscript's density-plus-nuclear-morphology complexity. The current loader reconstructs
+the 256 H&E cellular tiles in spatial row-major order and reads a separate
+`complexity_grid.npy` scored from registered native H&E and existing nuclear labels.
 
 If no sub-patch passes, the tile still gets `5120.npy` and `5120_to256.npy` but no `320_to16.npy`.
 Since the resume check tests for `5120.npy`, such a tile is never revisited; the dataloader, which
@@ -416,9 +417,9 @@ the first N tiles, which is the cheap way to check a new registration matrix.
   part of that strip, but not all of it: if your transcripts reach the edge of the capture area,
   widen the margin in `step5_extract_he_tiles.py` and `step6_extract_st_grids.py`. Changing this
   boundary changes the tile set and requires regenerating the processed data.
-- The complexity score, the 320 x 320 sub-patch filter and the 50 % overlap are the same as in the
-  Visium and Xenium branches; a change to any of them has to be made in all three, or the branches
-  stop being interchangeable for the dataloader.
+- The historical image-entropy sort, 320 x 320 sub-patch filter and 50 % overlap
+  occur in the Visium and Xenium branches. Their entropy sort does not determine
+  the current model's complexity selection; `complexity_grid.npy` does.
 - `WSI_tile.png` is written for every tile. It is a convenience preview and roughly doubles the I/O
   of step 5; drop that write for a large cohort.
 
@@ -628,23 +629,25 @@ all share it. The three grids bin the *same* transcripts at different scales, so
 agree to within the few transcripts that land
 exactly on a window edge — a useful check that the binning scales are consistent. Because tiles overlap
 by 50 %, a transcript near a tile border is counted in up to four neighbouring tiles; that is expected,
-and the dataloader treats tiles as independent samples.
+and the dataloader treats tiles as separate records. Assign their donor to a split before
+patch extraction so overlapping fields cannot cross train/test boundaries.
 
 ---
 
 ## 7. What is not covered here
 
-These files appear in the FOCUS data layout but are produced by separate steps, not by the scripts in
-this folder:
+These files also appear in the FOCUS data layout. The table identifies the actual
+helper or protected upstream owner; a complete public mouse-pup example and exact
+source entrances are in [real data preparation](../docs/real_data.md).
 
 | File | Produced by |
 | --- | --- |
-| `cell_mask.npy` | cell segmentation on the H&E patch; see [`../downstream/matrix/bin2cell_pipeline.py`](../downstream/matrix/bin2cell_pipeline.py) |
-| `pre_he.npy` | [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) tile features, 257 vectors of 1536 dimensions; export with `export_conditioning.py` |
-| `complexity_grid.npy` | Density and native morphology scored from registered H&E plus existing cell-instance labels with `score_complexity.py`; this does not generate masks |
-| `scgpt_data/` | [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per gene group |
-| `sc/{scRNA_data}.h5ad` | the matched single-cell reference for the tissue |
-| `coexpression_matrix.npy` | spatial gene-gene co-expression computed across the cohort |
+| `cell_mask.npy` | Existing cell segmentation from its separately maintained pipeline. For the public demo, `read_xenium_boundaries.py` reads vendor polygons and `../demos/select_official_cells.py` packs selected official IDs; neither performs segmentation. |
+| `pre_he.npy` | Official [Prov-GigaPath](https://huggingface.co/prov-gigapath/prov-gigapath) tile features, 257 vectors of 1536 dimensions; export with `export_conditioning.py` after accepting the model access terms. |
+| `complexity_grid.npy` | Density and native nuclear size, shape and hematoxylin texture scored from registered H&E plus existing nuclear-instance labels with `score_complexity.py`; this does not generate masks. The scorer writes a source-hash `.json` sidecar. |
+| `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per five-gene group from `export_conditioning.py`; see the audited non-Flash export and ortholog mapping in `real_data.md`. |
+| `sc/{scRNA_data}.h5ad` | Independent tissue/stage matched raw-count reference; `extract_mouse_pup_reference.py` selects the public P0 muscle subset for the demo. |
+| `coexpression_matrix.npy` | Spatial gene-gene prior from its separately maintained generator, with exact row-name sidecar. The demo uses an existing same-tile matrix, not an independent cohort estimate. |
 | `gene_order.npy`, `gene_name.txt` | the gene indices/names the model is trained on, derived from `gene_groups.csv` |
 
 Cell-type annotation, deconvolution and trajectory inference are also outside this folder and are

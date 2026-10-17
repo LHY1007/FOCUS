@@ -61,6 +61,9 @@ def train_fun(args, log_dir, n, pre_model_dir):
             pre_model_dir=pre_model_dir, gene_start=gene_start,
             split_manifest=args.split_manifest, split=args.split,
             reference_cells=args.reference_cells, seed=seed)
+        import json
+        with (save_dir / 'reference_selection.json').open('w', encoding='utf-8') as f:
+            json.dump(data.reference_selection, f, indent=2)
         model, diffusion = sr_create_model_and_diffusion(args)
         init = getattr(args, 'init_checkpoint', '')
         if init:

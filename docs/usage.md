@@ -1,42 +1,52 @@
 # Inputs and outputs
 
-## Five-gene software demo
+## Five-gene real-condition software demo
 
 ```bash
 python demos/run.py
 ```
 
-The runner reads the bundled `demos/focus-5gene.pt` and ten H&E PNG/NPZ pairs.
-It generates `Ttn, Car3, Des, Cav1, Myoz2` together with 1,000 DDIM reverse steps by default.
-`--steps N` selects an explicitly shortened run. No checkpoint download is performed.
+The runner strictly loads the bundled `demos/focus-5gene.pt` and one registered
+`demos/input/3_10.png` / `3_10.npz` pair. It generates **Ttn, Car3, Des, Cav1,
+Myoz2** jointly using 1,000 DDIM reverse steps by default; `--steps N` explicitly
+shortens a program check. The H&E and observed ST are from the **same** field in
+10x's public P1 Xenium mouse-pup sample. The checkpoint was fitted on this very
+tile for 100 optimizer updates from random initialization, batch 1. There is no
+held-out test, paper accuracy claim, or historical manuscript checkpoint here.
 
-Each input PNG is registered RGB H&E, shape (256,256,3). Its NPZ contains:
+The genuine conditions are an independent P0 mouse muscle scRNA reference (256
+cells from two donors), official 10x cell polygons (68 selected occupancy planes),
+native H&E plus official nuclear-boundary complexity, official scGPT-spatial and Prov-GigaPath
+pretrained embeddings, frozen official BioBERT v1.1 metadata, and a read-only
+50-gene co-expression prior derived from the **training tile**. The selected
+masks omit most cells; the scGPT human vocabulary needs explicit mouse-to-human
+ortholog mapping. The prior is in-sample. Exact access, hashes, selection and
+limits are in [real_data.md](real_data.md) and `demos/input/provenance.json`.
 
-| Key | Shape before batching | Meaning |
+| Input NPZ key | Shape before batching | Meaning |
 | --- | --- | --- |
-| low_res | (5,26,26) | Five gene expression planes |
-| WSI_320 | (256,3,16,16) | Row-major cellular tile grid |
-| Gene_index_map | (5,256,256) | Gene identity planes |
-| gene_class | (5,) | Gene indices |
-| metadata_feature | (768,) | Frozen official BioBERT v1.1 encoding of the Xenium mouse-pup prompt and current five genes |
-| co_expression | (K,K) | Existing gene-context input |
-| WSI_mask | (M,256,256) | Existing proxy components |
-| sc | (100,5) | Adult WMB reference in target-gene order |
-| scgpt | (512,26,26) | Zero pretrained-feature placeholder in the demo |
-| pre_he | (257,1536) | Zero pretrained-feature placeholder in the demo |
-| scale_gt | scalar | Compatibility field; not used to reconstruct counts |
-| genes | (5,) string | Target-gene order |
+| `low_res` | (5,26,26) | Normalized five-gene input from observed low-resolution counts |
+| `observed_hr_counts`, `observed_low_counts` | (5,256,256), (5,26,26) | Actual measured counts; **not** model predictions |
+| `WSI_320` | (256,3,16,16) | Registered row-major H&E cellular tile grid |
+| `Gene_index_map`, `gene_class` | (5,256,256), (5,) | Five selected source gene identities |
+| `metadata_feature` | (768,) | Frozen BioBERT encoding of true sample metadata and current gene names |
+| `co_expression` | (5,64) | Current five named rows pooled from the existing same-tile ST prior |
+| `WSI_mask` | (68,256,256) | Selected official 10x cell polygon occupancy at 10 µm/pixel |
+| `complexity` | (16,16) | Native H&E + official nuclear-label density/size/shape/texture complexity |
+| `sc` | (256,5) | Independent P0 muscle reference, aligned by exact names |
+| `scgpt` | (512,26,26) | Audited official scGPT-spatial v1 encoding of the measured ST |
+| `pre_he` | (257,1536) | Official Prov-GigaPath tile embeddings from native H&E |
+| `scale_gt` | scalar | Legacy compatibility input, not used as count ground truth |
+| `genes` | (5,) string | Exact target order |
 
-The H&E/ST measurements come from the public Xenium mouse-pup tiles used by the earlier demo.
-The adult WMB reference differs from that tissue. Proxy masks and zero scGPT/GigaPath arrays are
-retained as disclosed demo conditions. Each input identifies its source tile. The new weight was
-trained from random initialization for 100 updates with batch size 4 and the manuscript's four-term
-objective. It is not a recovered checkpoint from the paper experiments.
-
-Ten pairs produce ten PNGs and ten NPZs in `demos/output/`. Each NPZ stores finite float32
-`prediction`, shape (5,256,256), and `genes`. Each PNG is a 256x1280 grayscale strip: five panels
-in that order, all using [0,1]. It is exactly `round(255*prediction)` joined horizontally.
-Values are normalized expression, not transcript counts. Existing output stems are overwritten.
+`demos/output/3_10.npz` stores finite float32 `prediction` with shape
+(5,256,256), the five names, 1,000-step setting and “training-tile
+reconstruction” label. Its PNG is a 256×1280 five-panel grayscale strip:
+`round(255*clip(prediction,0,1))` joined in gene order. These normalized model
+values are not transcript counts. Check `demos/input/3_10.npz` for the separately
+stored observed count arrays. Only one pair is bundled to keep the example small.
+The validated 1,000-step run took 151.90 s on a CB4 RTX 6000 Ada GPU. Its
+preview is visibly speckled; do not use it as evidence of expression fidelity.
 
 ## Prepare a new experiment
 
@@ -57,18 +67,18 @@ Values are normalized expression, not transcript counts. Existing output stems a
    normalizes, logs, samples cells deterministically and selects reference genes by exact name.
    Put one gene name per line in `coexpression_matrix.genes.txt`, in the matrix's exact row and
    column order. The loader extracts the current five rows by name and rejects missing names.
-   Also provide registered native-resolution H&E and existing integer cell-instance labels for
+   Also provide registered native-resolution H&E and existing integer nuclear-instance labels for
    each patch. Score them into `WSI/extract/{layer}/{patch_id}/complexity_grid.npy` with:
 
    ```bash
-   python data_preprocessing/score_complexity.py --he native_he.tif --labels native_cell_labels.npy --pixel-size-um 0.5 --output /prepared/tissue/sample/WSI/extract/layer/patch/complexity_grid.npy
+   python data_preprocessing/score_complexity.py --he native_he.tif --labels native_nuclear_labels.npy --label-kind nucleus --pixel-size-um 0.5 --output /prepared/tissue/sample/WSI/extract/layer/patch/complexity_grid.npy
    ```
 
    The command measures existing labels; it does not segment cells. Each 2,560 µm field produces
    16×16 density plus shape, size and hematoxylin texture scores. The 256×256 mask alone is too
    coarse to preserve subcellular morphology at 10 µm/pixel, so full loading requires this grid.
 5. Export authentic encoder features below. Full-dataset loading rejects missing and entirely zero
-   features. The software demo's placeholders are not used for full-dataset loading.
+   features. The bundled demo uses nonzero official encoder features and native morphology from real inputs.
 6. Save actual platform, species and tissue in each sample's `metadata_prompt.txt`. Place the pinned
    [dmis-lab/biobert-v1.1](https://huggingface.co/dmis-lab/biobert-v1.1) revision
    `551ca18efd7f052c8dfa0b01c94c2a8e68bc5488` in `models/bert` (config, vocabulary,
@@ -105,7 +115,6 @@ positions. Empty rows keep zero vectors. Set st_feature_dim to the checkpoint's 
 python data_preprocessing/export_conditioning.py scgpt --spot /prepared/tissue/sample/spot_ST/extract/layer/patch/spot_ST.npz --gene-order /prepared/tissue/sample/gene_order.npy --gene-names /prepared/tissue/sample/gene_name.txt --model-dir /models/scgpt-spatial --gene-start 0 --gene-num 5 --output /prepared/tissue/sample/spot_ST/extract/layer/patch/scgpt_data/1to5.npy
 ```
 
-Use offset 5 and 6to10.npy for the next group. A companion .genes.txt records selected names;
+For the bundled mouse five genes, also pass `--ortholog-map data_preprocessing/examples/mouse_pup_scgpt_orthologs.csv` and apply the pinned upstream non-Flash patch described in [real_data.md](real_data.md). Use offset 5 and 6to10.npy for the next group. A companion .genes.txt records selected names;
 the loader verifies their order. Output JSON records extraction arguments and the feature hash.
-Existing features are not overwritten. Extraction with both upstream pretrained weight sets has
-not been executed in this environment.
+Existing features are not overwritten. Both official pretrained weight sets were actually loaded and used for the bundled tile; see [real_data.md](real_data.md) for the pinned versions, scGPT compatibility patch, matched-tensor audit and limits.

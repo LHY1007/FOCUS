@@ -23,7 +23,7 @@ uses `UNetModel._forward_manuscript`. The same model is used by `sample.py` and 
 | Methods 2: patient separation before patch extraction | guided_diffusion.splits; loader filters samples and rejects cross-split patients |
 | Methods 3.1, Table S9: four-term loss | 0.15 charb + 0.20 struct + 0.10 dis + 0.10 consis |
 | Methods 3.2: frozen encoders, LoRA and prompt routing | configure_finetuning, LowRankUpdate, ActiveTaskCoordinator.router |
-| Methods 4, pp. 39-41: density plus morphology heterogeneity | score_complexity -> morphology.complexity_from_native_labels -> Data_all._load_data -> UNetModel._forward_manuscript; radius 3 um, balance 0.5, equal component weights. The low-resolution complexity_grid is limited to the demo. |
+| Methods 4, pp. 39-41: density plus morphology heterogeneity | score_complexity -> morphology.complexity_from_native_labels -> Data_all._load_data -> UNetModel._forward_manuscript; radius 3 um, balance 0.5, equal component weights. The bundled demo uses native H&E and official 10x nuclear labels for this calculation. |
 
 Charbonnier uses `sqrt((epsilon_prediction-epsilon)^2+gamma^2)`, gamma=1e-4.
 Disentanglement uses `-cos(shared_HE,shared_ST)+cos(unique_HE,unique_ST)`.
@@ -43,8 +43,9 @@ These values define the new implementation; they are not recovered historical se
 - Descriptor deviations are mean absolute z scores relative to cells in the input tile. Size uses log
   area and equivalent diameter; texture uses hematoxylin entropy and variance. Cells are assigned by
   centroid. Full training reads `complexity_grid.npy` scored from registered native H&E and existing
-  cell-instance labels at 0.5 um/pixel, before the 10 um/pixel model input loses subcellular detail.
-  The demo falls back to its disclosed low-resolution proxy masks.
+  nuclear-instance labels at 0.5 um/pixel, before the 10 um/pixel model input loses subcellular detail.
+  The demo uses official nuclear polygons for complexity and official cell polygons for
+  the separate 68-plane occupancy input; that occupancy is a selected subset of visible cells.
 - Methods 1.5 says both "early iterations focus on simple patches" and "only patches with c above
   the current threshold" as that threshold increases. These statements conflict. This implementation
   follows the simple-to-complex order, retaining the lowest-scoring 10% of nonempty tiles initially
@@ -86,9 +87,11 @@ The actual configuration is saved beside weights.
 `max_steps` optionally limits execution checks; zero retains the full epoch count.
 
 The patient utility creates or validates real assignments. Original patient lists, figure-specific weights
-and a figure-to-input command map were not supplied. The bundled five-gene demo weight was trained
-from random initialization for 100 updates on existing public mouse-pup tiles. Its spatial split, proxy
-masks, adult WMB reference and zero encoder features are specified in usage.md.
+and a figure-to-input command map were not supplied. The bundled five-gene demo weight was trained from random initialization for 100 updates
+on one public mouse-pup training tile, batch 1. It uses a P0 muscle scRNA reference
+from an independent study, official 10x cell polygons, audited scGPT-spatial and
+Prov-GigaPath features, and a same-tile co-expression prior. There is no held-out
+validation or test donor. See [real_data.md](real_data.md) and [usage.md](usage.md).
 
 ## Verification scope
 
@@ -100,6 +103,12 @@ LoRA initialization. A CB4 GPU check
 uses explicitly synthetic inputs to verify five-gene forward/backward execution, metadata/task
 gradients, encoder freezing, a LoRA optimizer step, merged-weight strict loading and reverse sampling.
 
-A full 2,000-epoch experiment and Fig. 2-7 quantitative results have not been rerun. The feature-export
-helper follows the linked upstream interfaces; extraction with both pretrained weight sets has not
-been executed in this environment.
+A full 2,000-epoch experiment and Fig. 2-7 quantitative results have not been rerun.
+Both official pretrained encoder weight sets were loaded and real features were exported for
+the bundled registered tile. Strict formal loading and 100 real-condition optimizer updates
+completed. The genuine-condition 1,000-step DDIM run took 151.90 s and its
+five-panel PNG exactly matches its NPZ. The preview remains visibly speckled;
+this is a training-tile execution check, not independent accuracy evidence.
+The formal `sample.py` path also passed an explicitly shortened two-step DDPM
+execution on that same train tile. Package 0.3.0 source and wheel archives
+built, passed `twine check`, and an installed wheel ran its bundled two-step demo.

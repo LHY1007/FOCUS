@@ -4,6 +4,7 @@ Run inside the respective upstream encoder environment. See docs/usage.md.
 No model weights or additional datasets are bundled by this script.
 """
 import argparse
+import csv
 import hashlib
 import json
 from pathlib import Path
@@ -52,6 +53,7 @@ def scgpt(args):
     from anndata import AnnData
     from scipy import sparse
     from scgpt_spatial.tasks import embed_data
+    from scgpt_spatial.tasks import cell_emb as upstream_embedding
     names = np.loadtxt(args.gene_names, dtype=str, ndmin=1)
     order = np.load(args.gene_order).astype(int)
     if len(names) != len(order):
@@ -68,16 +70,57 @@ def scgpt(args):
     if not nonzero.any():
         raise ValueError('The selected ST group has no nonzero spots')
     adata = AnnData(matrix[nonzero].astype(np.float32))
-    adata.var_names = selected
+    encoder_names = selected.tolist()
+    if args.ortholog_map is not None:
+        with args.ortholog_map.open(newline='', encoding='utf-8') as handle:
+            rows = list(csv.DictReader(handle))
+        mapping = {row['source_gene']: row['encoder_gene'] for row in rows}
+        missing = [gene for gene in encoder_names if gene not in mapping]
+        if missing:
+            raise ValueError(f'Missing explicit encoder orthologs: {missing}')
+        encoder_names = [mapping[gene] for gene in encoder_names]
+    if len(set(encoder_names)) != len(encoder_names):
+        raise ValueError('Encoder gene names must be unique after mapping')
+    import json
+    vocab = json.loads((args.model_dir / 'vocab.json').read_text(encoding='utf-8'))
+    missing = [gene for gene in encoder_names if gene not in vocab]
+    if missing:
+        raise ValueError(f'Genes absent from scGPT-spatial vocabulary: {missing}; supply a verified ortholog map')
+    adata.var_names = encoder_names
     # Upstream embed_data performs slide-mean scaling, gene-mean scaling and
     # token binning; do not apply another log1p or normalization here.
+    original_load = upstream_embedding.load_pretrained
+    load_audit = {}
+
+    def checked_load(model, pretrained_params, **kwargs):
+        if not model.use_fast_transformer:
+            pretrained_params = {key.replace('Wqkv.', 'in_proj_'): value
+                                 for key, value in pretrained_params.items()}
+        state = model.state_dict()
+        required = [key for key in state if key.startswith(
+            ('encoder.', 'value_encoder.', 'transformer_encoder.'))]
+        unmatched = [key for key in required if key not in pretrained_params or
+                     pretrained_params[key].shape != state[key].shape]
+        if unmatched:
+            raise ValueError(f'scGPT-spatial encoder checkpoint mismatch: {unmatched[:8]}')
+        load_audit.update(required_tensors=len(required),
+                          required_parameters=sum(state[key].numel() for key in required),
+                          matched_tensors=len(required),
+                          checkpoint_sha256=hashlib.sha256((args.model_dir / 'best_model.pt').read_bytes()).hexdigest())
+        return original_load(model, pretrained_params, **kwargs)
+
+    upstream_embedding.load_pretrained = checked_load
     embedded = embed_data(adata, args.model_dir, gene_col='index', device=args.device,
                           batch_size=args.batch_size, use_fast_transformer=False)
+    if not load_audit:
+        raise RuntimeError('Upstream scGPT-spatial checkpoint loader was not called')
     values = np.asarray(embedded.obsm['X_scGPT'])
     full = np.zeros((676, values.shape[1]), dtype=np.float32)
     full[nonzero] = values
     save_array(args.output, full.T.reshape(values.shape[1], 26, 26))
     np.savetxt(args.output.with_suffix('.genes.txt'), selected, fmt='%s')
+    args.encoder_genes = encoder_names
+    args.checkpoint_audit = load_audit
 
 
 def main():
@@ -91,6 +134,8 @@ def main():
     st.add_argument('--gene-order', type=Path, required=True)
     st.add_argument('--gene-names', type=Path, required=True)
     st.add_argument('--model-dir', type=Path, required=True)
+    st.add_argument('--ortholog-map', type=Path,
+                    help='CSV source_gene,encoder_gene; required when source symbols are absent from the encoder vocabulary')
     st.add_argument('--gene-start', type=int, default=0)
     st.add_argument('--gene-num', type=int, default=5)
     for p in (he, st):
