@@ -37,6 +37,11 @@ noise or shared/distinct ratio losses.
 These values define the new implementation; they are not recovered historical settings.
 
 - Sinkhorn regularization 10, 100 log-domain iterations, differentiable transport and one reference per sample.
+- A measured source ST bin coarser than 10 µm adds a 0.1-scale denoiser-feature
+  residual to the shared backbone before its middle block; no extra output head
+  is introduced. At 10 µm or finer, the residual is zero, so the bundled
+  checkpoint follows its original trained path. This routing gain was not
+  provided by the paper, and no real coarse-bin cohort has been evaluated.
 - Activation heads receive capture sparsity, ST/H&E edge mismatch and between-cell
   expression mixing diagnostics. Their initial feature thresholds are 0.05, 0.40
   and 0.25, respectively. These are software calibration choices, not historical
@@ -116,5 +121,5 @@ RTX 6000 Ada (0.43 GiB peak allocated, 0.70 GiB peak reserved) and its
 five-panel PNG exactly matches its NPZ. The preview remains visibly speckled;
 this is a training-tile execution check, not independent accuracy evidence.
 The formal `sample.py` path also passed an explicitly shortened two-step DDPM
-execution on that same train tile. Package 0.3.0 source and wheel archives
+execution on that same train tile. Package 0.3.1 source and wheel archives
 built, passed `twine check`, and an installed wheel ran its bundled two-step demo.

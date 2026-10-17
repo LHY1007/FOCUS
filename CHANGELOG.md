@@ -1,5 +1,12 @@
 # Changelog
 
+## 0.3.1 - 2026-10-17
+
+- Use measured pre-degradation ST resolution to enable a shared-backbone
+  denoiser residual only for source bins coarser than 10 µm. The bundled
+  10 µm training tile retains the same inference path and checkpoint tensors.
+- Record the routing choice and its tested scope in the model guide.
+
 ## 0.3.0 - 2026-10-17
 
 - Replace the default proxy-conditioned ten-pair demonstration with one traced,

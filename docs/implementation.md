@@ -10,9 +10,11 @@ and [demo use](usage.md) provide the corresponding detail.
 
 `Data_all._load_data` indexes patch paths, while `__getitem__` reads the requested
 HR/LQ ST, H&E, masks and encoder features. A per-sample `st_resolution.json`
-records the measured pre-degradation ST bin width and its source; the shared
-backbone activates resolution enhancement only above 10 µm. Batch collation
-pads variable cell-mask counts, and zero-area padding is excluded from cell
+records the measured pre-degradation ST bin width and its source. Above 10 µm,
+the shared backbone receives an extra 0.1-scale denoiser-feature residual before
+its middle block; at 10 µm or finer that residual is exactly zero. The fixed gain
+is a software choice where the paper does not specify the routing operation.
+Batch collation pads variable cell-mask counts, and zero-area padding is excluded from cell
 statistics. The loader selects each gene group using `gene_order.npy` and its ordered
 `gene_name.txt`, then retrieves the same named genes from the scRNA reference.
 The bundled Xenium tile uses Ttn, Car3, Des, Cav1 and Myoz2, at original panel
@@ -92,8 +94,11 @@ bundled checkpoint strictly matches 352 state keys, including an output
 weight of shape `(5,128,3,3)`. Forward diffusion has 1,000 steps. Formal
 sampling defaults to 1,000 DDPM steps; the demo uses 1,000 DDIM steps and
 labels any shorter `--steps N` run as an execution check (Methods 1.1 and 3.1).
-The full real-condition demo produces finite `(5,256,256)` output;
-the five-panel PNG exactly matches the NPZ display transform.
+The full real-condition demo uses the 10 µm path and produces finite `(5,256,256)` output;
+a same-tensor controlled input check confirms that a source bin just above 10 µm
+changes the shared-backbone prediction. No genuine coarse-bin cohort has been
+trained or quantitatively evaluated with this new residual. The five-panel PNG
+exactly matches the NPZ display transform.
 
 ## Training, adaptation and scope
 

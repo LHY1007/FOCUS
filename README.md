@@ -84,7 +84,7 @@ The equation mapping and explicit choices are listed in [reproduction.md](docs/r
 
 ### Environment Setup
 
-The source package is version **0.3.0**. With a supported Python environment and a CUDA-compatible
+The source package is version **0.3.1**. With a supported Python environment and a CUDA-compatible
 PyTorch installation, install core dependencies and the package from this checkout:
 
 ```bash
@@ -213,8 +213,8 @@ The form asks about your computer, installation time, demo outputs and any uncle
 GitHub Actions builds and checks the package on CPU. `.travis.yml`, `.pypirc` and `netlify.toml`
 are optional configuration files for Travis CI, PyPI and Netlify; these services are not enabled.
 
-The optional container recipe can be built with `docker build -t focus-st:0.3.0 .` and run with
-`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.3.0`.
+The optional container recipe can be built with `docker build -t focus-st:0.3.1 .` and run with
+`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.3.1`.
 The container requires the NVIDIA Container Toolkit.
 
 ### Generated channels

@@ -41,7 +41,8 @@
     "original_st_resolution": {
       "um_per_bin": 10.0,
       "source": "Registered pre-degradation HR_ST_256.npz: 2560 um field / 256 bins; raw Xenium transcript positions are finer"
-    }
+    },
+    "resolution_backbone_gate": "0.3.1 software routing adds a shared-backbone residual only above 10 um; bundled source is exactly 10 um, so its trained path and state tensors are unchanged"
   },
   "demo_input_provenance_sha256": "4c36c1dc50c82ba405870ccb8f8a137b59b99d45c166c5dff8e722621d8ea4df",
   "expected_output": "one five-channel normalized-expression NPZ and five-panel PNG after 1000 DDIM reverse steps",

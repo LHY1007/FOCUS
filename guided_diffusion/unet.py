@@ -820,6 +820,10 @@ class UNetModel(nn.Module):
         gene_map = F.interpolate(gene_map, size=size, mode='nearest')
         h = core.fuse(torch.cat([hx, hhe, prompt_map, gene_map], 1))
         h = h + core.coordinator(features, active, prompt, scores)
+        # Native ST bins coarser than the cellular target activate an additional
+        # denoiser residual in the shared backbone. At 10 um or finer this term
+        # is exactly zero, preserving the trained high-resolution path.
+        h = h + 0.1 * self.resolution_activation.to(h.dtype)[:, None, None, None] * hx
         scale = h.new_ones(len(h))
         h = self.middle_block(h, emb)
         for module in self.output_blocks:
