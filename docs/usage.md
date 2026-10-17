@@ -34,7 +34,7 @@ limits are in [real_data.md](real_data.md) and `demos/input/provenance.json`.
 | `WSI_mask` | (68,256,256) | Selected official 10x cell polygon occupancy at 10 µm/pixel |
 | `complexity` | (16,16) | Native H&E + official nuclear-label density/size/shape/texture complexity |
 | `sc` | (256,5) | Independent P0 muscle reference, aligned by exact names |
-| `scgpt` | (512,26,26) | Audited official scGPT-spatial v1 encoding of the measured ST |
+| `scgpt` | (512,26,26) | Official scGPT-spatial v1 encoding of the measured ST with verified checkpoint loading |
 | `pre_he` | (257,1536) | Official Prov-GigaPath tile embeddings from native H&E |
 | `scale_gt` | scalar | Legacy compatibility input, not used as count ground truth |
 | `genes` | (5,) string | Exact target order |
@@ -71,7 +71,7 @@ preview is visibly speckled; do not use it as evidence of expression fidelity.
    each patch. Score them into `WSI/extract/{layer}/{patch_id}/complexity_grid.npy` with:
 
    ```bash
-   python data_preprocessing/score_complexity.py --he native_he.tif --labels native_nuclear_labels.npy --label-kind nucleus --pixel-size-um 0.5 --output /prepared/tissue/sample/WSI/extract/layer/patch/complexity_grid.npy
+   python data_preprocessing/score_complexity.py --he native_he.npy --labels native_nuclear_labels.npy --label-kind nucleus --pixel-size-um 0.5 --output /prepared/tissue/sample/WSI/extract/layer/patch/complexity_grid.npy
    ```
 
    The command measures existing labels; it does not segment cells. Each 2,560 µm field produces
@@ -117,4 +117,4 @@ python data_preprocessing/export_conditioning.py scgpt --spot /prepared/tissue/s
 
 For the bundled mouse five genes, also pass `--ortholog-map data_preprocessing/examples/mouse_pup_scgpt_orthologs.csv` and apply the pinned upstream non-Flash patch described in [real_data.md](real_data.md). Use offset 5 and 6to10.npy for the next group. A companion .genes.txt records selected names;
 the loader verifies their order. Output JSON records extraction arguments and the feature hash.
-Existing features are not overwritten. Both official pretrained weight sets were actually loaded and used for the bundled tile; see [real_data.md](real_data.md) for the pinned versions, scGPT compatibility patch, matched-tensor audit and limits.
+Existing features are not overwritten. Both official pretrained weight sets were actually loaded and used for the bundled tile; see [real_data.md](real_data.md) for the pinned versions, scGPT compatibility patch, matched-tensor checks and limits.

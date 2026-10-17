@@ -1,4 +1,4 @@
-# Settings from the supplied final manuscript and Supplementary Table S9.
+# Default five-gene settings from Methods 3.1 and Supplementary Table S9.
 attention_resolutions: 32,16,8
 data_dir: ''
 diffusion_steps: 1000

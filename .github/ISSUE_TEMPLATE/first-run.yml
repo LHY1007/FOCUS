@@ -36,7 +36,7 @@ body:
     id: demo
     attributes:
       label: Demo run
-      description: Give the command, elapsed time and number of PNG and NPZ outputs. Note whether weight download was included. If you could not run the demo, explain where you stopped.
+      description: Give the command, elapsed time and whether the five-gene PNG and NPZ were generated. Include model loading in the time estimate. If you could not run the demo, explain where you stopped.
     validations:
       required: true
   - type: textarea

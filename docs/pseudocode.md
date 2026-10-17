@@ -1,6 +1,6 @@
 # Algorithm outline
 
-This outline describes the revised implementation. The historical training run and its weights are not included.
+This outline summarizes the current implementation. Historical training weights are not included.
 
 ## Five-gene training
 
@@ -24,7 +24,7 @@ For each update:
   Save model and optimizer states at the requested completed-step interval.
 ```
 
-The default configuration specifies 2,000 epochs. `max_steps` deliberately limits a new execution check. The variance is fixed, so the U-Net emits five channels. See [reproduction.md](reproduction.md) for the equations and newly chosen implementation details.
+The default configuration specifies 2,000 epochs. `max_steps` limits a shorter execution run when set. The variance is fixed, so the U-Net emits five channels. See [reproduction.md](reproduction.md) for equations and implementation details.
 
 ## Inference
 

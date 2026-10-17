@@ -1,4 +1,4 @@
-# Settings from the supplied final manuscript and Supplementary Table S9.
+# Five-gene inference settings from Methods 1.1 and 3.1.
 attention_resolutions: 32,16,8
 base_samples: ''
 batch_size: 1

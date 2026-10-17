@@ -645,7 +645,7 @@ source entrances are in [real data preparation](../docs/real_data.md).
 | `cell_mask.npy` | Existing cell segmentation from its separately maintained pipeline. For the public demo, `read_xenium_boundaries.py` reads vendor polygons and `../demos/select_official_cells.py` packs selected official IDs; neither performs segmentation. |
 | `pre_he.npy` | Official [Prov-GigaPath](https://huggingface.co/prov-gigapath/prov-gigapath) tile features, 257 vectors of 1536 dimensions; export with `export_conditioning.py` after accepting the model access terms. |
 | `complexity_grid.npy` | Density and native nuclear size, shape and hematoxylin texture scored from registered H&E plus existing nuclear-instance labels with `score_complexity.py`; this does not generate masks. The scorer writes a source-hash `.json` sidecar. |
-| `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per five-gene group from `export_conditioning.py`; see the audited non-Flash export and ortholog mapping in `real_data.md`. |
+| `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per five-gene group from `export_conditioning.py`; see the pinned non-Flash export and ortholog mapping in `real_data.md`. |
 | `sc/{scRNA_data}.h5ad` | Independent tissue/stage matched raw-count reference; `extract_mouse_pup_reference.py` selects the public P0 muscle subset for the demo. |
 | `coexpression_matrix.npy` | Spatial gene-gene prior from its separately maintained generator, with exact row-name sidecar. The demo uses an existing same-tile matrix, not an independent cohort estimate. |
 | `gene_order.npy`, `gene_name.txt` | the gene indices/names the model is trained on, derived from `gene_groups.csv` |

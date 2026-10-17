@@ -27,7 +27,7 @@ Downloaded source SHA256 values for this run were `476b6d94c56bdabd5db010d5f54b7
 the Prov-GigaPath PyTorch weight SHA256 was
 `877947214318afa9e011754b74bbc3894a1f480a253afc7bc8045b8321dedd63`.
 
-## What ran on CB4
+## Processed example and validation
 
 The pre-existing registered 10x tree was read at `Preview_379/processed`. Its tile `3_10`
 has top-left morphology coordinates `(3840, 12800)` µm. Native H&E is 5,120×5,120 RGB
@@ -47,7 +47,7 @@ IDs into the 10 µm occupancy input. This selection omits most visible cells and
 co-expression prior uses the training tile; both limit biological conclusions. It
 does not replace the separately maintained mask generator.
 
-The scGPT-spatial export produced 512×26×26 features after auditing **153/153**
+The scGPT-spatial export produced 512×26×26 features after matching **153/153**
 required pretrained encoder tensors. Its non-Flash source needs the small, recorded
 compatibility patch `data_preprocessing/scgpt_compat/official_v1_nonflash.patch` and
 the local `torchtext` compatibility shim in the same folder with our PyTorch build.
@@ -77,7 +77,7 @@ run establishes biological accuracy.
    The existing `data_preprocessing/xenium/Xenium_pami.py` describes transcript binning
    and H&E patch extraction; its path constants must be set to your actual raw/output
    locations. The previously prepared `Preview_379/processed` tree, rather than a new
-   raw replay, supplied the tile validated in this delivery. See
+   raw replay, supplied the tile validated here. See
    [preprocessing layout](../data_preprocessing/README.md) for exact bin conventions.
 2. **Before patching**, assign all sections from each patient/donor to one split.
    Create `samples.csv` with `tissue,sample_id,patient_id,split`, then run
@@ -126,8 +126,8 @@ run establishes biological accuracy.
    and use the true target-gene order. A checkpoint trained on unrelated proxy
    conditions is not a substitute for fitting the genuine inputs.
 
-The full 10x raw download and raw-to-tile replay were **not** repeated in this
-delivery. The completed evidence starts at the existing registered public 10x
+The full 10x raw download and raw-to-tile replay were **not** repeated for this
+version. The completed validation starts at the existing registered public 10x
 processed tree and continues through genuine feature extraction, strict formal
 loading, 100 real-condition updates and the bundled inference. Original manuscript
 patient lists, historical checkpoint and figure-specific data remain unavailable.

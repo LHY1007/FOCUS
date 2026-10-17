@@ -1,15 +1,15 @@
 # Changelog
 
-## Unreleased (0.3.0)
+## Unreleased (package version 0.3.0)
 
 - Replace the default proxy-conditioned ten-pair demonstration with one traced,
   registered 10x mouse-pup H&E/ST tile and genuine official cell and nuclear polygons,
-  native morphology, independent P0 muscle scRNA, and audited scGPT-spatial,
+  native morphology, independent P0 muscle scRNA, and checkpoint-verified scGPT-spatial,
   Prov-GigaPath and BioBERT features. Add exact public entrances and a strict
   formal-data loading path. This is a training-tile execution check.
-- Align the new five-gene training and inference path with the final 46-page manuscript and
-  49-page supplement: fixed diffusion variance, three conditional experts, four Table S9
-  losses, name-aligned references and sparse gene memory.
+- Add five-gene training and inference with fixed diffusion variance, three
+  conditional experts, four weighted losses, name-aligned references and sparse
+  gene memory, as described in the Methods and Supplementary Table S9.
 - Add native-resolution morphology scoring from existing nuclear labels and native Prov-GigaPath
   tile export. Require real per-sample metadata, pinned frozen BioBERT v1.1 and current-gene
   co-expression row names. Use all nonempty cellular tiles at inference after the training curriculum.
@@ -19,7 +19,7 @@
   absence of an independent test.
 - Compute formal PCC per gene and retain undefined values for constant channels; make DDPM and DDIM
   sampler choices explicit.
-- Preserve the prior one-gene demo history below as an earlier release, not the current method.
+- The earlier single-gene examples remain documented below as archived versions.
 
 ## 0.2.0 - 2026-10-16
 

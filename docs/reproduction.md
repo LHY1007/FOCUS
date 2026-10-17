@@ -1,8 +1,9 @@
 # Method implementation and reproduction
 
-The reference is the supplied 46-page final manuscript and 49-page supplement.
-The current implementation was revised against those files. Newly supplied code and
-software-demo weights are identified below; historical experiment records were not reconstructed.
+This guide maps the Methods and Supplementary Methods to the executable model
+and records implementation choices where the published method leaves a value
+open. The bundled demo checkpoint belongs to this software version; historical
+training records and figure checkpoints are not available here.
 
 ## Equations and live call chain
 
@@ -89,7 +90,7 @@ The actual configuration is saved beside weights.
 The patient utility creates or validates real assignments. Original patient lists, figure-specific weights
 and a figure-to-input command map were not supplied. The bundled five-gene demo weight was trained from random initialization for 100 updates
 on one public mouse-pup training tile, batch 1. It uses a P0 muscle scRNA reference
-from an independent study, official 10x cell polygons, audited scGPT-spatial and
+from an independent study, official 10x cell polygons, checkpoint-verified scGPT-spatial and
 Prov-GigaPath features, and a same-tile co-expression prior. There is no held-out
 validation or test donor. See [real_data.md](real_data.md) and [usage.md](usage.md).
 

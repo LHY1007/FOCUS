@@ -199,14 +199,12 @@ model output, access requirements and known limits.
 ### Documentation and contribution
 
 See [docs/](docs/index.md) for real data acquisition, input/output definitions, a source-aligned algorithm outline and
-[software submission details](docs/software_submission.md). Contribution and release information
+[model implementation and validation](docs/implementation.md). Contribution and release information
 are in [CONTRIBUTING.md](CONTRIBUTING.md) and [CHANGELOG.md](CHANGELOG.md).
 
 If you are trying FOCUS for the first time, follow the installation and demo instructions above
 and share your results through the [first-run feedback form](https://github.com/LHY1007/FOCUS/issues/new?template=first-run.yml).
 The form asks about your computer, installation time, demo outputs and any unclear instructions.
-The example software packages listed in the Nature checklist are linked in
-[software-submission references](docs/software_submission.md#reference-policies-and-examples).
 
 GitHub Actions builds and checks the package on CPU. `.travis.yml`, `.pypirc` and `netlify.toml`
 are optional configuration files for Travis CI, PyPI and Netlify; these services are not enabled.
@@ -290,7 +288,7 @@ more than one.
 
 ### Preprocessing Code
 
-**All of the code that produces the layout above from raw platform output lives in [`data_preprocessing/`](data_preprocessing/).**
+Platform-specific H&E/ST preprocessing lives in [`data_preprocessing/`](data_preprocessing/); existing masks, co-expression priors and pretrained features are supplied through separate steps.
 It covers the three platforms used for the main experiments:
 
 | Platform | Script | Produces |
@@ -315,7 +313,7 @@ Additional inputs have separate generators or export helpers:
 | --- | --- |
 | `cell_mask.npy` | cell segmentation on the H&E patch; see [`downstream/matrix/bin2cell_pipeline.py`](downstream/matrix/bin2cell_pipeline.py) |
 | `pre_he.npy` | Official [Prov-GigaPath](https://huggingface.co/prov-gigapath/prov-gigapath) H&E features exported by `data_preprocessing/export_conditioning.py` after gated access |
-| `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings exported by `data_preprocessing/export_conditioning.py` with an audited checkpoint |
+| `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings exported by `data_preprocessing/export_conditioning.py` with verified checkpoint loading |
 | `coexpression_matrix.npy` | spatial gene–gene co-expression computed across the cohort |
 | `gene_order.npy`, `gene_name.txt` | gene indices/names derived from `gene_groups.csv` |
 
@@ -385,7 +383,7 @@ to select another configuration. Data and output paths are relative to the worki
 
 ### Training
 
-The default configuration follows the supplied final manuscript (Methods 1.1 and 3.1)
+The default configuration follows Methods 1.1 and 3.1
 and Supplementary Table S9:
 
 ```yaml
