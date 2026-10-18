@@ -17,6 +17,7 @@ from guided_diffusion.script_util import (
 import os
 from guided_diffusion.train_util import TrainLoop
 import numpy as np
+import torch.distributed as dist
 
 
 def train_fun(args, log_dir, n, pre_model_dir):
@@ -26,6 +27,8 @@ def train_fun(args, log_dir, n, pre_model_dir):
     if args.all_gene <= 0 or args.gene_num <= 0 or args.all_gene % args.gene_num:
         raise ValueError('all_gene must be a positive multiple of gene_num; define a separate config for a partial group')
     seed = getattr(args, 'seed', 0)
+    rank = dist.get_rank() if dist.is_initialized() else 0
+    world_size = dist.get_world_size() if dist.is_initialized() else 1
     torch.manual_seed(seed)
     np.random.seed(seed)
     random.seed(seed)
@@ -49,7 +52,11 @@ def train_fun(args, log_dir, n, pre_model_dir):
         if resume_group and gene_start == resume_group[0] and gene_end != resume_group[1]:
             raise ValueError('Resume checkpoint gene range differs from the selected group')
         resume_checkpoint = args.resume_checkpoint if resume_group == (gene_start, gene_end) else ''
-        stamp = time.strftime('%Y%m%d-%H%M%S') + f'-{time.time_ns() % 1000000000:09d}'
+        stamp = time.strftime('%Y%m%d-%H%M%S') + f'-{time.time_ns() % 1000000000:09d}' if rank == 0 else ''
+        if world_size > 1:
+            stamps = [stamp]
+            dist.broadcast_object_list(stamps, src=0)
+            stamp = stamps[0]
         save_dir = Path(log_dir) / args.dataset_use / f'{args.SR_times}X' / f'G{gene_start}-{gene_end}_{stamp}'
         logger.configure(dir=str(save_dir))
         data = load_data(
@@ -70,14 +77,19 @@ def train_fun(args, log_dir, n, pre_model_dir):
                     previous.get('st_resolution_by_sample') != resolution_by_sample or
                     previous.get('st_resolution_sources') != resolution_sources):
                 raise ValueError('Resume checkpoint has different task diagnostics or source ST resolutions')
-        with (save_dir / 'config.yaml').open('w', encoding='utf-8') as f:
-            yaml.safe_dump({**vars(args), 'gene_start': gene_start,
-                            'activation_diagnostics_version': 'spatial_v1',
-                            'st_resolution_by_sample': resolution_by_sample,
-                            'st_resolution_sources': resolution_sources}, f)
-        import json
-        with (save_dir / 'reference_selection.json').open('w', encoding='utf-8') as f:
-            json.dump(data.reference_selection, f, indent=2)
+        if rank == 0:
+            with (save_dir / 'config.yaml').open('w', encoding='utf-8') as f:
+                yaml.safe_dump({**vars(args), 'gene_start': gene_start,
+                                'activation_diagnostics_version': 'spatial_v1',
+                                'st_resolution_by_sample': resolution_by_sample,
+                                'st_resolution_sources': resolution_sources,
+                                'distributed_world_size': world_size,
+                                'effective_global_batch_size': args.batch_size * world_size}, f)
+            import json
+            with (save_dir / 'reference_selection.json').open('w', encoding='utf-8') as f:
+                json.dump(data.reference_selection, f, indent=2)
+        if world_size > 1:
+            dist.barrier()
         model, diffusion = sr_create_model_and_diffusion(args)
         init = getattr(args, 'init_checkpoint', '')
         if init:
@@ -89,15 +101,20 @@ def train_fun(args, log_dir, n, pre_model_dir):
             logger.log(f'LoRA adapted {count} matrices; U-Net encoders are frozen')
         model.to(dist_util.dev()).train()
         schedule = create_named_schedule_sampler(args.schedule_sampler, diffusion)
-        TrainLoop(
+        loop = TrainLoop(
             model=model, diffusion=diffusion, data=data, batch_size=args.batch_size,
             microbatch=args.microbatch, lr=args.lr, ema_rate=args.ema_rate,
             log_interval=args.log_interval, save_interval=args.save_interval,
             resume_checkpoint=resume_checkpoint, use_fp16=args.use_fp16,
             fp16_scale_growth=args.fp16_scale_growth, schedule_sampler=schedule,
             weight_decay=args.weight_decay, lr_anneal_steps=args.lr_anneal_steps,
-            SR_times=args.SR_times, epoch=args.epoch, max_steps=getattr(args, 'max_steps', 0)).run_loop()
-        if getattr(args, 'finetune', False):
+            SR_times=args.SR_times, epoch=args.epoch, max_steps=getattr(args, 'max_steps', 0),
+            seed=seed)
+        torch.manual_seed(seed + rank)
+        loop.run_loop()
+        if world_size > 1:
+            dist.barrier()
+        if getattr(args, 'finetune', False) and rank == 0:
             from guided_diffusion.finetune import merged_state_dict
             torch.save(merged_state_dict(model), save_dir / 'merged.pt')
 

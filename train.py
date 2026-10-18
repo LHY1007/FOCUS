@@ -1,58 +1,63 @@
-"""Train FOCUS.
+"""Train FOCUS from a YAML configuration, optionally with torchrun.
 
-Reads `config/config_train.yaml` beside this script (or `--config`), builds the data loader, the
-conditional U-Net and the diffusion process, then hands control to
-`guided_diffusion.train_util.TrainLoop`.
-
-    python train.py
+One worker uses one visible GPU. ``torchrun --nproc_per_node=N train.py``
+shards patch indices between ranks and synchronizes trainable gradients.
+``batch_size`` is per worker; the effective global batch is N times larger.
 """
 
-import os, torch.multiprocessing as mp
+import argparse
+import os
+from pathlib import Path
+
 os.environ["DISPLAY"] = ""
 os.environ["MPLBACKEND"] = "Agg"
 os.environ["QT_QPA_PLATFORM"] = "offscreen"
 os.environ["TOKENIZERS_PARALLELISM"] = "false"
 
-
-import argparse
-import yaml
-from pathlib import Path
-import argparse
-from guided_diffusion import dist_util
-from guided_diffusion.script_util import (
-    add_dict_to_argparser
-)
-
 import torch
-import os
-from mpi4py import MPI
-comm =MPI.COMM_WORLD
-rank = comm.Get_rank()
-gpu_ids = [0]
-if torch.cuda.is_available():
-    torch.cuda.set_device(rank % torch.cuda.device_count())
-from train_part import train_fun
-def main():
-    args = create_argparser().parse_args()
-    if comm.size != 1:
-        raise RuntimeError("This training entrypoint is single-process; do not launch unsynchronized multi-GPU jobs")
-    train_fun(args,args.log_dir,args.n ,args.pre_model_dir)
+import torch.distributed as dist
+import yaml
+
+from guided_diffusion.script_util import add_dict_to_argparser
+
 
 def create_argparser():
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--config", default=str(Path(__file__).parent / "config/config_train.yaml"), help="Path to YAML configuration file")
-    args, _ = parser.parse_known_args()
-
-    # Load the configuration from the YAML file
-    with open(args.config, "r") as file:
-        config = yaml.safe_load(file)
-
-    # Add the configuration values to the argument parser
+    pre = argparse.ArgumentParser(add_help=False)
+    pre.add_argument("--config", default=str(Path(__file__).parent / "config/config_train.yaml"))
+    known, _ = pre.parse_known_args()
+    with open(known.config, encoding="utf-8") as stream:
+        config = yaml.safe_load(stream)
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--config", default=known.config, help="YAML training configuration")
     add_dict_to_argparser(parser, config)
-
     return parser
 
 
-if __name__ == "__main__":
+def main():
+    args = create_argparser().parse_args()
+    world_size = int(os.environ.get("WORLD_SIZE", "1"))
+    if world_size == 1 and int(os.environ.get("OMPI_COMM_WORLD_SIZE", "1")) > 1:
+        raise RuntimeError("Launch multi-process training with torchrun, not mpirun")
+    if world_size > 1:
+        local_rank = int(os.environ["LOCAL_RANK"])
+        if torch.cuda.is_available():
+            if local_rank >= torch.cuda.device_count():
+                raise RuntimeError("Each torchrun worker needs a distinct visible GPU")
+            torch.cuda.set_device(local_rank)
+            backend = "nccl"
+        else:
+            backend = "gloo"
+        dist.init_process_group(backend=backend, init_method="env://")
+    elif torch.cuda.is_available():
+        torch.cuda.set_device(0)
+    try:
+        # Select the process device before importing the dataset dependencies.
+        from train_part import train_fun
+        train_fun(args, args.log_dir, args.n, args.pre_model_dir)
+    finally:
+        if dist.is_initialized():
+            dist.destroy_process_group()
 
+
+if __name__ == "__main__":
     main()

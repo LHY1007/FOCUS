@@ -1,5 +1,19 @@
 # Changelog
 
+## 0.3.2 - 2026-10-18
+
+- Add bounded, parameterized extraction of a registered Xenium tile from
+  original HTTP range or local H&E and transcript files, preserving the full
+  panel order and all three spatial count grids.
+- Support torchrun training with per-rank patch sharding, synchronized
+  conditional experts, rank-specific logs, and rank-zero model and optimizer
+  checkpoints. The configured batch size is per worker.
+- Extend paired five-gene evaluation with H&E gradient alignment metrics,
+  RMSE by native-complexity tercile, count-conserving interpolation of the
+  observed low-resolution input and matched prediction comparisons.
+- Check a previously trained sample's physical ST resolution against its
+  checkpoint when sampling it again.
+
 ## 0.3.1 - 2026-10-17
 
 - Use measured pre-degradation ST resolution to enable a shared-backbone

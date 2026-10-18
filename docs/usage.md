@@ -54,12 +54,16 @@ preview is visibly speckled; do not use it as evidence of expression fidelity.
 To compare this paired output with the observed five-gene counts, run:
 
 ```bash
-python -m evaluation.evaluate_pair --observed demos/input/3_10.npz --prediction demos/output/3_10.npz --output demos/output/metrics.json
+python -m evaluation.evaluate_pair --observed demos/input/3_10.npz --prediction demos/output/3_10.npz --input-baseline --output demos/output/metrics.json
 ```
 
 The JSON reports each gene separately, the observed UMI total, and normalized RMSE,
-SSIM and PCC. The demo is a reconstruction of its training tile; these metrics are
-not an independent accuracy estimate. Constant channels have undefined PCC (`null`).
+SSIM and PCC, plus registered H&E gradient LNCC, gradient SSIM and RMSE
+by native-complexity tercile. The optional
+input baseline spreads each observed 100 um count across its contributing 10 um
+bins and preserves per-gene totals. Normalized model values are not UMI counts.
+The demo reconstructs its training tile, so these metrics are not independent
+accuracy estimates. Constant channels have undefined PCC (`null`).
 
 ## Prepare a new experiment
 

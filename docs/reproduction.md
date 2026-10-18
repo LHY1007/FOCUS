@@ -91,10 +91,39 @@ python sample.py --config config/config_test.yaml --data_root data/prepared --sp
 python train.py --config config/config_finetune.yaml --init_checkpoint models/foundation.pt --split finetune
 ```
 
+For multiple visible GPUs, use `torchrun --nproc_per_node=N train.py` with the
+same configuration arguments. The distributed sampler shards patch indices per
+epoch and repeats a few indices if the patch count is not divisible by the
+worker count;
+gradients are synchronized even when workers activate different experts.
+Each worker records its own losses, while rank zero saves the shared model,
+optimizer and configuration. `batch_size` is per worker. The effective global
+batch is `N × batch_size`; choose it deliberately when comparing experiments.
+The source patient manifest remains the split authority. Resume restores model
+and optimizer state and resumes the deterministic epoch shard order, but does
+not reproduce the exact random noise sequence from an interrupted run.
+When sampling a specimen recorded in the training configuration, its measured
+ST resolution and source description must still match the checkpoint record;
+new specimens supply their own measured values.
+
 Training uses five genes, 2,000 epochs, batch size 4, AdamW learning rate 1e-4 and 1,000 diffusion steps.
 Formal sampling uses 1,000 DDPM reverse steps by default; the bundled execution demo uses 1,000 DDIM steps.
 The actual configuration is saved beside weights.
 `max_steps` optionally limits execution checks; zero retains the full epoch count.
+
+The registered Xenium mouse-pup tile can be extracted from the official raw
+H&E and transcript HTTP range sources with the command in [real_data.md](real_data.md).
+For tile `3_10`, the raw replay produced exactly the same 399-channel
+`HR_ST_256`, `HR_ST_128` and `spot_ST` matrices as the separately prepared
+tile: all three contain 10,590,521 panel transcripts. The 256-pixel H&E
+thumbnail differs by at most one 8-bit level between the OpenCV and libvips
+bilinear resamplers. The replayed tile can be placed into the formal tree
+without changing its existing cell labels, independent reference, co-expression
+prior or pretrained features.
+That formal tree passed strict loading and a two-step DDPM inference with the
+100-update real-condition checkpoint, producing a finite five-channel output.
+The full 1,000-step demonstration was previously run on the matching
+registered tile, whose H&E was resampled by libvips.
 
 The patient utility creates or validates real assignments. Original patient lists, figure-specific weights
 and a figure-to-input command map were not supplied. The bundled five-gene demo weight was trained from random initialization for 100 updates
@@ -121,5 +150,14 @@ RTX 6000 Ada (0.43 GiB peak allocated, 0.70 GiB peak reserved) and its
 five-panel PNG exactly matches its NPZ. The preview remains visibly speckled;
 this is a training-tile execution check, not independent accuracy evidence.
 The formal `sample.py` path also passed an explicitly shortened two-step DDPM
-execution on that same train tile. Package 0.3.1 source and wheel archives
-built, passed `twine check`, and an installed wheel ran its bundled two-step demo.
+execution on that same train tile. Two-rank CPU/Gloo checks exercised patch
+sharding, expert-conditional gradient synchronization, checkpoint and optimizer
+resume, and one complete real-condition forward/backward update. A separate
+two-rank real-condition LoRA run updated the adapted model, resumed its model
+and optimizer for a second update, and exported strictly loadable merged
+five-channel weights. These are execution checks on the single training tile.
+The seven-V100
+historical run was not repeated. Package 0.3.2 source and wheel archives
+built and passed `twine check`; the wheel installed into a separate target
+directory and exposed the paired evaluator and Xenium replay command. The
+bundled model and its previously validated 1,000-step execution are unchanged.

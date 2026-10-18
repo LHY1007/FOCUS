@@ -66,14 +66,15 @@ file from that state must not be used. The official Prov-GigaPath tile encoder m
 257×1536 nonzero vectors from native H&E, including 256 row-major 320-pixel tiles.
 BioBERT was frozen and encoded actual sample metadata plus the current five names.
 
-The resulting nuclear-label formal tree is outside Git at `../real_data_nucleus`;
-it passed `Data_all` strict loading and
-`python -m guided_diffusion.splits ../real_data_nucleus/samples.csv`. The manifest
+The resulting nuclear-label formal tree was kept outside Git;
+it passed `Data_all` strict loading and manifest validation with
+`guided_diffusion.splits`. Run that validator on your own prepared `samples.csv`.
+The tested manifest
 has one `train` donor and no validation/test donor. Training used random initialization,
 one tile, batch 1, learning rate 1e-4 and 100 optimizer updates, with the paper's four
 loss weights. The run is a real-condition execution check, not the manuscript's
-2,000-epoch or seven-GPU experiment. Its model/optimizer/config are in
-`../control/real_training_spatial_v1/Mouse_pup_muscle/10X/G0-5_20261017-173441-573639307/` on CB4.
+2,000-epoch or seven-GPU experiment. Its model, optimizer and configuration
+were retained outside Git; the compatible inference checkpoint is bundled in `demos/`.
 The saved configuration records the measured bin size and its physical derivation;
 resume checks both. The physical source record was copied from the already present
 `st_resolution.json` into that configuration after training.
@@ -83,16 +84,36 @@ DDPM execution check. The bundled demo ran the full 1,000-step DDIM chain on the
 same real conditions in 148.02 s on one RTX 6000 Ada GPU (0.43 GiB peak CUDA
 allocated; 0.70 GiB peak reserved). Its prediction is visibly speckled, so neither
 run establishes biological accuracy.
+The paired evaluation command's count-conserving low-input interpolation has
+normalized RMSE 0.0827 on this training tile, versus 0.5129 for the bundled
+checkpoint. The demo checkpoint therefore does not outperform even this simple
+input baseline on its fitted tile.
 
 ## Preparing your own formal tree
 
-1. Download the complete **matching** 10x output, supplemental H&E and image alignment
-   from the above page outside the repository. Check checksums and 10x coordinates.
-   The existing `data_preprocessing/xenium/Xenium_pami.py` describes transcript binning
-   and H&E patch extraction; its path constants must be set to your actual raw/output
-   locations. The previously prepared `Preview_379/processed` tree, rather than a new
-   raw replay, supplied the tile validated here. See
-   [preprocessing layout](../data_preprocessing/README.md) for exact bin conventions.
+1. Download the **matching** `experiment.xenium`, `gene_panel.json` and
+   `he_imagealignment.csv` into one sample directory outside the repository. Check
+   their sample identity and 10x coordinates. For a single tile, the large original
+   transcript and H&E objects can be read by HTTP range without downloading their
+   entire 13 GB combined size:
+
+   ```bash
+   RAW=/path/to/Xenium_V1_mouse_pup/outs
+   BASE=https://s3-us-west-2.amazonaws.com/10x.files/samples/xenium/1.6.0/Xenium_V1_mouse_pup
+   python data_preprocessing/xenium/replay_registered_tile.py \
+     --raw-dir "$RAW" \
+     --he "$BASE/Xenium_V1_mouse_pup_he_image.ome.tif" \
+     --transcripts "$BASE/Xenium_V1_mouse_pup_transcripts.parquet" \
+     --tile 3_10 --output /path/to/replayed/3_10
+   ```
+
+   The replay writes all 399 panel channels, the source gene order, registered
+   native H&E and both ST grid scales. It was compared to the separately prepared
+   `Preview_379/processed` tile: all three sparse ST matrices agreed exactly,
+   including 10,590,521 panel transcripts. OpenCV and libvips bilinear H&E
+   resampling differed by at most three 8-bit levels in the native field and one
+   level at 256×256. See the
+   [preprocessing layout](../data_preprocessing/README.md) for bin conventions.
 2. **Before patching**, assign all sections from each patient/donor to one split.
    Create `samples.csv` with `tissue,sample_id,patient_id,split`, then run
    `python -m guided_diffusion.splits /path/to/samples.csv`. Overlapping 50% tiles
@@ -144,8 +165,15 @@ run establishes biological accuracy.
    and use the true target-gene order. A checkpoint trained on unrelated proxy
    conditions is not a substitute for fitting the genuine inputs.
 
-The full 10x raw download and raw-to-tile replay were **not** repeated for this
-version. The completed validation starts at the existing registered public 10x
-processed tree and continues through genuine feature extraction, strict formal
-loading, 100 real-condition updates and the bundled inference. Original manuscript
+The bounded 10x raw-to-tile replay was completed for tile `3_10`; the large raw
+files were read directly from the official HTTP range source. The existing
+registered tree supplied official feature extraction, strict formal loading,
+100 real-condition updates and the bundled inference. A formal tree with the
+raw-replayed H&E and both ST grids also passed strict loading and a two-step
+DDPM run with the same checkpoint; it produced a finite 256×256×5 prediction.
+The previously exported H&E features and nuclear complexity were retained from
+the same registered sample; their source H&E crop differs from the new OpenCV
+crop by the small resampling amounts stated above. No full 1,000-step run was
+repeated on this replayed crop.
+Original manuscript
 patient lists, historical checkpoint and figure-specific data remain unavailable.

@@ -11,7 +11,7 @@ jobs:
         with:
           python-version: '3.11'
       - run: python -m pip install build twine
-      - run: python -m compileall -q guided_diffusion transform demos
+      - run: python -m compileall -q guided_diffusion transform demos evaluation data_preprocessing train.py train_part.py sample.py tests/run_distributed_training_check.py
       - run: python -m build
       - run: python -m twine check dist/*
       - run: python -m pip install --no-deps dist/*.whl

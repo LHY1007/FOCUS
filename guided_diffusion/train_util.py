@@ -21,6 +21,7 @@ from torch.optim import AdamW
 from collections import Counter
 import time
 from torch.utils.data import DataLoader
+from torch.utils.data.distributed import DistributedSampler
 from guided_diffusion import dist_util, logger
 #from . import dist_util, logger
 from guided_diffusion.fp16_util import MixedPrecisionTrainer
@@ -78,7 +79,8 @@ class TrainLoop:
         lr_anneal_steps=0,
         SR_times=10,
         epoch=1000,
-        max_steps=0
+        max_steps=0,
+        seed=0,
     ):
         # ==================== 基本参数 ====================
         self.model = model
@@ -92,11 +94,14 @@ class TrainLoop:
         self.SR_times = SR_times
         self.epoch = epoch
         self.max_steps = int(max_steps)
+        self.seed = int(seed)
+        self.rank = dist.get_rank() if dist.is_initialized() else 0
+        self.world_size = dist.get_world_size() if dist.is_initialized() else 1
         
         # ==================== 训练状态 ====================
         self.step = 0
         self.resume_step = 0
-        self.global_batch = self.batch_size
+        self.global_batch = self.batch_size * self.world_size
         
         # ==================== EMA 配置 ====================
         self.ema_rate = (
@@ -138,8 +143,14 @@ class TrainLoop:
         if self.resume_checkpoint:
             self._load_optimizer_state()
         
-        # 不使用 DDP 包装
-        self.ddp_model = self.model
+        if self.world_size > 1:
+            self.ddp_model = DDP(
+                self.model,
+                device_ids=[torch.cuda.current_device()] if self.device.type == 'cuda' else None,
+                find_unused_parameters=True,
+            )
+        else:
+            self.ddp_model = self.model
         
         # ==================== 数据加载器 ====================
         self.data_loader = self._create_dataloader_with_prefetch()
@@ -184,21 +195,36 @@ class TrainLoop:
         if not 0 <= num_workers <= 4:
             raise ValueError('FOCUS_NUM_WORKERS must be between 0 and 4')
         
+        sampler = DistributedSampler(
+            self.data, num_replicas=self.world_size, rank=self.rank,
+            shuffle=not deterministic, seed=self.seed, drop_last=False,
+        ) if self.world_size > 1 else None
         loader = DataLoader(
             self.data,
             batch_size=self.batch_size,
-            shuffle=not deterministic,
+            shuffle=(not deterministic) if sampler is None else False,
+            sampler=sampler,
             num_workers=num_workers,
             drop_last=False,
             collate_fn=__import__("guided_diffusion.load_dataset", fromlist=["collate_patches"]).collate_patches,
-            pin_memory=True,
+            pin_memory=self.device.type == 'cuda',
             prefetch_factor=2 if num_workers else None,
             persistent_workers=num_workers > 0,
         )
         
-        # 无限循环迭代器
+        # Resume at the next local batch in the deterministic epoch order.
+        local_count = len(sampler) if sampler is not None else len(self.data)
+        batches_per_epoch = (local_count + self.batch_size - 1) // self.batch_size
+        start_epoch, skip_batches = divmod(self.resume_step, batches_per_epoch)
+        epoch = start_epoch
         while True:
-            yield from loader
+            if sampler is not None:
+                sampler.set_epoch(epoch)
+            for index, batch in enumerate(loader):
+                if epoch == start_epoch and index < skip_batches:
+                    continue
+                yield batch
+            epoch += 1
     
     def _create_dataloader_with_prefetch(self, max_prefetch=1):
         """
@@ -314,7 +340,9 @@ class TrainLoop:
         """主训练循环"""
         # 计算总迭代次数
         import math
-        total_iterations = math.ceil(len(self.data) / self.batch_size) * int(self.epoch)
+        local_count = math.ceil(len(self.data) / self.world_size)
+        self.batches_per_epoch = math.ceil(local_count / self.batch_size)
+        total_iterations = self.batches_per_epoch * int(self.epoch)
         if self.max_steps:
             total_iterations = min(total_iterations, self.max_steps)
         if total_iterations <= 0:
@@ -418,9 +446,6 @@ class TrainLoop:
                 for k, v in cond.items()
             }
             
-            # 判断是否为最后一个微批次
-            last_batch = (i + self.microbatch) >= batch.shape[0]
-            
             # 采样时间步
             t, weights = self.schedule_sampler.sample(micro.shape[0], self.device)
             
@@ -434,25 +459,20 @@ class TrainLoop:
                 model_kwargs=micro_cond,
             )
             
+            # Each microbatch may activate a different expert. Synchronize
+            # every backward so an expert used only before the final microbatch
+            # still contributes its gradients on every rank.
             losses = compute_losses()
-            
-            # 更新采样器
             if isinstance(self.schedule_sampler, LossAwareSampler):
                 self.schedule_sampler.update_with_local_losses(
                     t, losses["loss"].detach()
                 )
-            
-            # 加权平均损失
             loss = (losses["loss"] * weights).sum() / batch.shape[0]
             if not torch.isfinite(loss):
                 raise RuntimeError(f"Non-finite training loss: {loss.detach().item()}")
-            
-            # 记录损失
             log_loss_dict(
                 self.diffusion, t, {k: v * weights for k, v in losses.items()}
             )
-            
-            # 反向传播
             self.mp_trainer.backward(loss)
     
     def _anneal_lr(self):
@@ -471,12 +491,14 @@ class TrainLoop:
         logger.logkv("step", self.step + 1)
         import math
         updates = self.step + 1
-        batches_per_epoch = math.ceil(len(self.data) / self.batch_size)
+        batches_per_epoch = self.batches_per_epoch
         full_epochs, partial = divmod(updates, batches_per_epoch)
-        logger.logkv("samples", full_epochs * len(self.data) + min(partial * self.batch_size, len(self.data)))
+        logger.logkv("samples", full_epochs * len(self.data) + min(partial * self.global_batch, len(self.data)))
     
     def save(self):
         """保存模型检查点"""
+        if self.rank != 0:
+            return
         def save_checkpoint(rate, params):
             state_dict = self.mp_trainer.master_params_to_state_dict(params)
             

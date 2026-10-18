@@ -25,6 +25,7 @@ data_preprocessing/
 │   └── test_preprocessing_fixes.py  # regression checks for the two fixed bugs
 └── xenium/
     ├── Xenium_pami.py   # Xenium: aligned H&E tiles + HR_ST and spot_ST grids
+    ├── replay_registered_tile.py  # bounded single-tile extraction from raw Xenium files
     ├── utils.py         # OME-TIFF affine warping, gradient magnitude, graph helpers
     └── jsontocsv.py     # Xenium gene_panel.json -> gene_groups.csv
 ```
@@ -120,6 +121,8 @@ Additional libraries:
 - **`duckdb`** — Xenium only. `Xenium_pami.py` pushes the per-tile transcript window into DuckDB and
   joins it against the gene panel in SQL, which is what keeps the parquet scan from loading the whole
   `transcripts.parquet` into memory.
+- **`fsspec`, `pyarrow`, `tifffile`** — the single-tile Xenium command reads coordinate-filtered
+  Parquet row groups and compressed H&E TIFF tiles from local files or HTTP range sources.
 - **`pyometiff`** — Xenium only, for reading the `.ome.tif` morphology image.
 - **`torch` / `anndata` / `scikit-learn` / `matplotlib`** are imported by both `utils.py` files. The
   functions that need them (graph construction, LSI, CLR normalisation) are not used by the
@@ -429,6 +432,36 @@ the first N tiles, which is the cheap way to check a new registration matrix.
 
 ## 5. Xenium (`xenium/Xenium_pami.py`)
 
+For a bounded, parameterized extraction from the original 10x mouse-pup files, use
+`xenium/replay_registered_tile.py`. It reads `experiment.xenium`, `gene_panel.json` and
+`he_imagealignment.csv` from the same raw sample directory. The two large inputs can
+be local files or matching HTTP range URLs:
+
+```bash
+RAW=/path/to/Xenium_V1_mouse_pup/outs
+BASE=https://s3-us-west-2.amazonaws.com/10x.files/samples/xenium/1.6.0/Xenium_V1_mouse_pup
+python data_preprocessing/xenium/replay_registered_tile.py \
+  --raw-dir "$RAW" \
+  --he "$BASE/Xenium_V1_mouse_pup_he_image.ome.tif" \
+  --transcripts "$BASE/Xenium_V1_mouse_pup_transcripts.parquet" \
+  --tile 3_10 --output /path/to/replayed/3_10
+```
+
+The command writes `5120.npy`, `5120_to256.npy`, `HR_ST_256.npz`,
+`HR_ST_128.npz`, `spot_ST.npz`, `gene_names.csv` and `provenance.json`.
+The three count matrices retain every panel channel in the original `gene_panel.json`
+order and have exactly equal per-gene totals. Coordinates are in Xenium microns;
+tile `3_10` starts at `(3840, 12800)` µm. It includes all panel transcripts in the
+field without a QV or cell-assignment filter. Only intersecting Parquet row groups
+and source H&E TIFF tiles are read, so unrelated tissue fields are not decoded.
+The H&E resampler is OpenCV bilinear; a previously processed tree made with
+libvips bilinear can differ by a few uint8 levels while retaining the same
+registration. Check the native image against its recorded transform and verify
+the counts before supplying any other conditions or calling the formal loader.
+
+The notebook-style `Xenium_pami.py` below describes the earlier full-slide
+pipeline. It has sample-specific path constants and is not the command above.
+
 ### 5.1 What it does
 
 ```
@@ -627,9 +660,8 @@ print(sub.shape)                      # (256, 16, 16, 3) uint8
 
 For every tile, the gene dimension `G` must equal the number of rows in `gene_groups.csv` (Visium,
 Xenium) or `gene_names.csv` (Visium HD), and `HR_ST_256.npz`, `HR_ST_128.npz` and `spot_ST.npz` must
-all share it. The three grids bin the *same* transcripts at different scales, so their totals should
-agree to within the few transcripts that land
-exactly on a window edge — a useful check that the binning scales are consistent. Because tiles overlap
+all share it. For the 2,560 µm fields and half-open coordinate intervals used here, the three
+grids bin the *same* transcripts and their per-gene totals should agree exactly. Because tiles overlap
 by 50 %, a transcript near a tile border is counted in up to four neighbouring tiles; that is expected,
 and the dataloader treats tiles as separate records. Assign their donor to a split before
 patch extraction so overlapping fields cannot cross train/test boundaries.

@@ -84,7 +84,7 @@ The equation mapping and explicit choices are listed in [reproduction.md](docs/r
 
 ### Environment Setup
 
-The source package is version **0.3.1**. With a supported Python environment and a CUDA-compatible
+The source package is version **0.3.2**. With a supported Python environment and a CUDA-compatible
 PyTorch installation, install core dependencies and the package from this checkout:
 
 ```bash
@@ -213,8 +213,8 @@ The form asks about your computer, installation time, demo outputs and any uncle
 GitHub Actions builds and checks the package on CPU. `.travis.yml`, `.pypirc` and `netlify.toml`
 are optional configuration files for Travis CI, PyPI and Netlify; these services are not enabled.
 
-The optional container recipe can be built with `docker build -t focus-st:0.3.1 .` and run with
-`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.3.1`.
+The optional container recipe can be built with `docker build -t focus-st:0.3.2 .` and run with
+`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.3.2`.
 The container requires the NVIDIA Container Toolkit.
 
 ### Generated channels
@@ -426,8 +426,14 @@ not been recovered. Use the original lists when repeating that experiment.
 Each epoch visits the complete selected training set, including its final partial batch.
 Each five-gene group receives the corresponding gene offset and writes its actual `config.yaml`
 beside its checkpoints. `all_gene` must be a multiple of five; use a separate panel definition for a remainder.
-The entrypoint runs one GPU process. The paper reports a seven-V100 training environment;
-the included validation does not repeat that training.
+To use multiple visible GPUs, launch with `torchrun --nproc_per_node=N train.py` and the same
+configuration arguments. Ranks read patch shards and synchronize gradients;
+the sampler repeats a few patches when their number is not divisible by the worker
+count. Each rank writes a loss log, while rank zero writes model and optimizer
+checkpoints.
+`batch_size` is per rank, so the effective global batch is `N * batch_size`.
+For one GPU, use `python train.py` as above. The reported seven-V100 manuscript run
+and its global batch interpretation were not reconstructed.
 
 ### Fine-tuning
 
@@ -476,11 +482,22 @@ The built-in `sample.py` reports only the following patch-level metrics:
 - **CC / PCC**: Pearson correlation coefficient for gene-wise concordance
 
 `sample.py` writes these three per patch in `metrics.csv` and a JSON record linking each
-prediction to its sample, gene order and physical ST resolution. For a paired five-gene NPZ,
-`python -m evaluation.evaluate_pair --observed demos/input/3_10.npz --prediction demos/output/3_10.npz --output demos/output/metrics.json`
-exports per-gene normalized RMSE, SSIM and PCC with observed UMI totals. The bundled pair
-is a training-tile reconstruction. These utilities do not implement external baselines or
-the full set of manuscript figure metrics.
+prediction to its sample, gene order and physical ST resolution. For a paired five-gene NPZ:
+
+```bash
+python -m evaluation.evaluate_pair --observed demos/input/3_10.npz \
+  --prediction demos/output/3_10.npz --input-baseline \
+  --output demos/output/metrics.json
+```
+
+This exports normalized RMSE, SSIM and PCC, observed UMI totals, gradient LNCC and
+gradient SSIM against the registered H&E, RMSE by native-complexity tercile,
+and a count-conserving interpolation of
+the observed low-resolution input for comparison. It does not convert normalized
+predictions into UMI counts. The bundled pair is a training-tile reconstruction;
+Add `--compare label=/path/to/prediction.npz` for another run on the same tile and
+gene order; each named run is scored independently. External baselines and
+manuscript figure estimates require their own matched data.
 
 ## Troubleshooting
 

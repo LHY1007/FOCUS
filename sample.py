@@ -122,6 +122,13 @@ def main(Output):
             gene_start=start_gene, split_manifest=args.split_manifest, split=args.split,
             reference_cells=args.reference_cells, seed=args.seed,
         )
+        for key, value in test_dataset.sample_resolution.items():
+            name = f'{key[0]}/{key[1]}'
+            if name in trained['st_resolution_by_sample']:
+                if (trained['st_resolution_by_sample'][name] != value or
+                        trained['st_resolution_sources'].get(name) !=
+                        test_dataset.sample_resolution_source[key]):
+                    raise ValueError(f'{name}: source ST resolution differs from the training checkpoint')
         data_loader = DataLoader(test_dataset, batch_size=1, shuffle=False, num_workers=0, collate_fn=collate_patches)
 
         csv_path = os.path.join(results_dir, "metrics.csv")
