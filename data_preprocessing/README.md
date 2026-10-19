@@ -21,6 +21,8 @@ data_preprocessing/
 │   ├── step6_extract_st_grids.py  # transcripts -> HR_ST and spot_ST grids
 │   ├── step7_stitch_preview.py    # low-resolution tiles -> slide preview
 │   └── step8_qc_tile.py           # per-tile H&E / expression check
+├── histology/
+│   └── cell_mask.py               # H&E -> nuclei -> non-overlapping cell masks (cell_mask.npy)
 ├── tests/
 │   └── test_preprocessing_fixes.py  # regression checks for the two fixed bugs
 └── xenium/
@@ -29,6 +31,37 @@ data_preprocessing/
     ├── utils.py         # OME-TIFF affine warping, gradient magnitude, graph helpers
     └── jsontocsv.py     # Xenium gene_panel.json -> gene_groups.csv
 ```
+
+### Cell segmentation
+
+`cell_mask.npy` is produced by [`histology/cell_mask.py`](histology/cell_mask.py), which follows the
+segmentation description in the supplementary method section clause by clause:
+
+| Method section | Code |
+| --- | --- |
+| 0.5 um/pixel H&E patches | the `5120.npy` the tiling steps already write |
+| pretrained StarDist2D | `StarDist2D.from_pretrained("2D_versatile_he")` |
+| **default thresholds** | `PROB_THRESH = NMS_THRESH = None` |
+| small artifacts removed | `drop_small_objects()` |
+| **isotropically dilated, non-overlapping** | `expand_non_overlapping()`, nearest-nucleus assignment |
+| stitched back, visually inspected | `--draw` writes `cell_mask.png` per patch |
+
+The expansion is worth one sentence, because it is the property the model depends on. Every
+background pixel within reach of a nucleus is assigned to the **nearest** nucleus, so no pixel can be
+claimed by two cells and the per-cell channels are disjoint by construction. A plain morphological
+dilation does not guarantee that: two expanding labels can write the same pixel and the last writer
+silently wins, which would make the per-cell mean that `CellFidelityConstraining` computes arbitrary.
+
+```bash
+pip install .[segmentation]     # stardist + tensorflow, the only extra this needs
+cd data_preprocessing/histology
+python cell_mask.py --root <WSI/extract/{layer}> --all --draw
+```
+
+[`../downstream/matrix/bin2cell_pipeline.py`](../downstream/matrix/bin2cell_pipeline.py) runs the
+published **bin2cell** recipe instead, and differs in exactly one respect: its detector thresholds
+are 0.01 rather than the model defaults, and its expansion operates on the 2 um bin grid rather than
+on pixels. Both are kept; `cell_mask.py` is the one to use to reproduce the method section.
 
 ---
 

@@ -7,6 +7,29 @@
 只把路径换成本项目的数据位置。
 
     python bin2cell_pipeline.py
+
+与补充材料 Section 6 的对应关系
+-------------------------------
+本脚本走的是 bin2cell 官方流程（Polanski et al., Bioinformatics 2024）。
+与补充材料那一段逐句对应如下，**最后一处不同**：
+
+    补充材料 Section 6                  本脚本
+    --------------------------------    ------------------------------------
+    0.5 um/pixel 的 H&E patch           b2c.scaled_he_image(mpp=0.5)
+    pretrained StarDist2D               stardist_model="2D_versatile_he"
+    small artifacts removed             b2c 内部按面积过滤
+    masks 各向同性、非重叠扩张          b2c.expand_labels         (In[13])
+    结果 stitched back 到 tissue field  insert_labels 映射到 bin 网格 (In[10])
+    visually inspected                  he_segmentation.png / he_cell_mask.png
+    **default thresholds**              **prob_thresh=0.01（不同）**
+
+最后一行是唯一的偏差：bin2cell 官方 recipe 用 0.01/0.001，不是模型默认的
+0.5/0.4；产出已发表结果的是 0.01 这一套，所以此处保留。
+
+若要严格按补充材料的 `default thresholds` 复现，用
+``data_preprocessing/histology/cell_mask.py``：它同样用 StarDist2D 但在默认
+阈值下运行，膨胀放在像素级（本脚本在 2 um bin 级），并直接写出 FOCUS 训练
+所需的 ``cell_mask.npy``。两者都保留，用途不同。
 """
 
 import os

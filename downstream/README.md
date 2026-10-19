@@ -196,14 +196,23 @@ for every sample.
 
 ## 6. Trajectory inference (`trajectory/`)
 
-`01_preprocess.py` filters the section, normalises, clusters, and scores the bone
-lineage markers. `02_psts.py` then runs the stLearn PSTS trajectory.
+Three steps, in order:
 
 ```bash
 cd downstream/trajectory
-python 01_preprocess.py
-python 02_psts.py
+python 00_subsample.py     # 50,000-cell subsample + k-means, fixed seed
+python 01_preprocess.py    # filter, normalise, cluster, score lineage markers
+python 02_psts.py          # the PSTS trajectory, one per lineage
 ```
+
+`00_subsample.py` keeps 50,000 cells drawn with `SEED = 0` and labels them with
+k-means on the PCA embedding, writing `output/nc_psts_trajectory.h5ad`. The seed
+is fixed, so the subsample, the clustering and the resulting trajectory are
+reproducible: the same seed must be used for the arms that are being compared,
+or the trajectory difference between them is partly sampling noise.
+
+`01_preprocess.py` filters the section, normalises, clusters, and scores the bone
+lineage markers.
 
 `02_psts.py` reimplements the stLearn pipeline rather than calling it:
 DBSCAN localisation of subclusters, PAGA, diffusion pseudotime, and the global
@@ -213,13 +222,14 @@ That spatial term is what keeps the pseudotime consistent with the tissue layout
 instead of following the transcriptome alone. One trajectory is produced per
 lineage (osteogenic, adipogenic, chondrogenic).
 
-Outputs and required intermediate data:
+Being a reimplementation, it runs on any expression matrix, which is what lets
+the same code produce both arms of the comparison: the sensitivity-only input
+(the stLearn baseline) and the FOCUS-enhanced input.
+
+Outputs:
 
 - The step computes the trajectories and stops. Figure assembly is separate;
   `trajectories` holds the trees, subcluster centroids and ordered node paths.
-- `02_psts.py` expects `nc_psts_trajectory.h5ad`, the object produced by
-  subsampling the scored section to 50,000 cells and assigning k-means clusters.
-  That subsampling script is not in this folder.
 
 ---
 
