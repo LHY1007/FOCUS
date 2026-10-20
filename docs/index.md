@@ -13,4 +13,4 @@
 - [Downstream analysis](../downstream/README.md)
 - [Contributing](../CONTRIBUTING.md)
 
-The package version is 0.3.3. See the README for the demo checkpoint and input conditions.
+The package version is 0.3.4. See the README for the demo checkpoint and input conditions.

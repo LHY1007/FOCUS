@@ -369,10 +369,10 @@ Within a tile, each 320 x 320 sub-patch must pass a tissue filter before it ente
 - mean luminance < 220, **and** mean red channel > 120.
 
 Accepted sub-patches are resized to 16 x 16, cycled until the stack holds 256 entries, and sorted by
-ascending **image entropy** in this historical preprocessing file. That entropy is **not** the
-manuscript's density-plus-nuclear-morphology complexity. The current loader reconstructs
-the 256 H&E cellular tiles in spatial row-major order and reads a separate
-`complexity_grid.npy` scored from registered native H&E and existing nuclear labels.
+ascending **image entropy**. The model reads density-plus-nuclear-morphology
+complexity from `complexity_grid.npy`. The loader reconstructs
+the 256 H&E cellular tiles in spatial row-major order. Score the complexity grid
+from registered native H&E and nuclear labels.
 
 If no sub-patch passes, the tile still gets `5120.npy` and `5120_to256.npy` but no `320_to16.npy`.
 Since the resume check tests for `5120.npy`, such a tile is never revisited; the dataloader, which
@@ -444,9 +444,9 @@ the first N tiles, which is the cheap way to check a new registration matrix.
   part of that strip, but not all of it: if your transcripts reach the edge of the capture area,
   widen the margin in `step5_extract_he_tiles.py` and `step6_extract_st_grids.py`. Changing this
   boundary changes the tile set and requires regenerating the processed data.
-- The historical image-entropy sort, 320 x 320 sub-patch filter and 50 % overlap
-  occur in the Visium and Xenium branches. Their entropy sort does not determine
-  the current model's complexity selection; `complexity_grid.npy` does.
+- The image-entropy sort, 320 x 320 sub-patch filter and 50 % overlap
+  occur in the Visium and Xenium branches. The model reads morphology complexity
+  from `complexity_grid.npy`.
 - `WSI_tile.png` is written for every tile. It is a convenience preview and roughly doubles the I/O
   of step 5; drop that write for a large cohort.
 

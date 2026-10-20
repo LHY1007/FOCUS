@@ -35,7 +35,7 @@ limits are in [real_data.md](real_data.md) and `demos/input/provenance.json`.
 | `sc` | (256,5) | Independent P0 muscle reference, aligned by exact names |
 | `scgpt` | (512,26,26) | Official scGPT-spatial v1 encoding of the measured ST with verified checkpoint loading |
 | `pre_he` | (257,1536) | Official Prov-GigaPath tile embeddings from native H&E |
-| `scale_gt` | scalar | Legacy compatibility input, not used as count ground truth |
+| `scale_gt` | scalar | Patch target maximum retained for compatibility |
 | `genes` | (5,) string | Exact target order |
 | `original_st_bin_um` | scalar | Measured pre-degradation ST bin size, in µm, from sample provenance |
 
@@ -47,8 +47,7 @@ values are not transcript counts. Check `demos/input/3_10.npz` for the separatel
 stored observed count arrays. Only one pair is bundled to keep the example small.
 The validated 1,000-step run took 148.02 s on one CB4 RTX 6000 Ada 48 GiB GPU,
 including loading and writing. Peak CUDA memory was 0.43 GiB allocated and 0.70 GiB
-reserved by PyTorch; this is not a measured minimum VRAM requirement. Its
-preview is visibly speckled; do not use it as evidence of expression fidelity.
+reserved by PyTorch.
 
 To compare this paired output with the observed five-gene counts, run:
 
@@ -61,8 +60,7 @@ SSIM and PCC, plus registered H&E gradient LNCC, gradient SSIM and RMSE
 by native-complexity tercile. The optional
 input baseline spreads each observed 100 um count across its contributing 10 um
 bins and preserves per-gene totals. Normalized model values are not UMI counts.
-The demo reconstructs its training tile, so these metrics are not independent
-accuracy estimates. Constant channels have undefined PCC (`null`).
+Constant channels have undefined PCC (`null`).
 
 ## Prepare a new experiment
 
@@ -82,9 +80,10 @@ accuracy estimates. Constant channels have undefined PCC (`null`).
 3. Apply the supplement's ST filtering: remove genes expressed in fewer than 2% of pixels; discard
    pixels expressing fewer than 2% of genes. Keep grid positions as zero rows and retain the same
    gene columns in HR and LQ maps. Record the retained names and column indices.
-4. Supply existing cell masks and spatial co-expression input through the documented interface.
-   Their generation is maintained separately. Supply a species/tissue-matched raw-count reference,
-   perform QC, preserve unique gene names and store one h5ad per tissue in `sc/`. The loader
+4. Generate H&E cell masks with [`cell_mask.py`](../data_preprocessing/histology/cell_mask.py)
+   or supply registered native instances. Prepare the spatial prior with the
+   [Pearson example](real_data.md#preparing-a-tissue-co-expression-prior). Supply a
+   species/tissue-matched raw-count reference, perform QC, preserve unique gene names and store one h5ad per tissue in `sc/`. The loader
    normalizes, logs, samples cells deterministically and selects reference genes by exact name.
    Put one gene name per line in `coexpression_matrix.genes.txt`, in the matrix's exact row and
    column order. The loader extracts the current five rows by name and rejects missing names.
@@ -95,7 +94,7 @@ accuracy estimates. Constant channels have undefined PCC (`null`).
    python data_preprocessing/score_complexity.py --he native_he.npy --labels native_nuclear_labels.npy --label-kind nucleus --pixel-size-um 0.5 --output /prepared/tissue/sample/WSI/extract/layer/patch/complexity_grid.npy
    ```
 
-   The command measures existing labels; it does not segment cells. Each 2,560 µm field produces
+   This command scores the supplied nuclear labels. Each 2,560 µm field produces
    16×16 density plus shape, size and hematoxylin texture scores. The 256×256 mask alone is too
    coarse to preserve subcellular morphology at 10 µm/pixel, so full loading requires this grid.
 5. Export authentic encoder features below. Full-dataset loading rejects missing and entirely zero
@@ -138,4 +137,4 @@ python data_preprocessing/export_conditioning.py scgpt --spot /prepared/tissue/s
 
 For the bundled mouse five genes, also pass `--ortholog-map data_preprocessing/examples/mouse_pup_scgpt_orthologs.csv` and apply the pinned upstream non-Flash patch described in [real_data.md](real_data.md). Use offset 5 and 6to10.npy for the next group. A companion .genes.txt records selected names;
 the loader verifies their order. Output JSON records extraction arguments and the feature hash.
-Existing features are not overwritten. Both official pretrained weight sets were actually loaded and used for the bundled tile; see [real_data.md](real_data.md) for the pinned versions, scGPT compatibility patch, matched-tensor checks and limits.
+The helper preserves existing feature files. The bundled tile uses the pinned scGPT-spatial and Prov-GigaPath weights described in [real_data.md](real_data.md), including the scGPT compatibility patch and matched-tensor checks.

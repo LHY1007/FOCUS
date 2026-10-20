@@ -68,7 +68,7 @@ noise or shared/distinct ratio losses.
 - LoRA rank defaults to 8 with a zero-initialized update. Frozen task matrices include convolution and
   attention weights. All U-Net input encoding paths and the time embedding are frozen; decoder and
   matching/fusion layers remain trainable. Resume loads model and optimizer states and counts completed
-  updates. Data-loader ordering after interruption is not bitwise reproduced.
+  updates. Each launch seeds the sampler from the configured seed.
 
 ## Commands
 
@@ -90,8 +90,9 @@ Each worker records its own losses, while rank zero saves the shared model,
 optimizer and configuration. `batch_size` is per worker. The effective global
 batch is `N × batch_size`; choose it deliberately when comparing experiments.
 The source patient manifest remains the split authority. Resume restores model
-and optimizer state and resumes the deterministic epoch shard order, but does
-not reproduce the exact random noise sequence from an interrupted run.
+and optimizer state and the recorded update count. Distributed runs use that count
+and the configured seed to select the epoch shard. Each launch seeds its process
+RNG for noise sampling.
 When sampling a specimen recorded in the training configuration, its measured
 ST resolution and source description must still match the checkpoint record;
 new specimens supply their own measured values.

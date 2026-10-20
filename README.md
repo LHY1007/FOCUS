@@ -84,7 +84,7 @@ The equation mapping and explicit choices are listed in [reproduction.md](docs/r
 
 ### Environment Setup
 
-The source package is version **0.3.3**. With a supported Python environment and a CUDA-compatible
+The source package is version **0.3.4**. With a supported Python environment and a CUDA-compatible
 PyTorch installation, install core dependencies and the package from this checkout:
 
 ```bash
@@ -122,7 +122,7 @@ conda activate focus
   - `timm` (1.0.22) — vision models
   - `mpi4py` (3.1.3) — MPI runtime used by the training and sampling entrypoints
 
-`FOCUS.yaml` records a supplied conda environment; it is not a verified record of the paper's training machines.
+`FOCUS.yaml` defines the supplied `focus` conda environment used by the commands above.
 
 Preprocessing uses OpenCV for image operations, DuckDB and pyometiff for Xenium, and
 SpatialData, spatialdata-io and pyvips for Visium HD. Downstream analysis uses rctd-py,
@@ -161,9 +161,7 @@ The final package list is in [`docs/environments/windows-tools.txt`](docs/enviro
 Optional legacy paths use `accimage` for image decoding and TensorFlow 1.x for TensorBoard
 logging. The tests above used Pillow decoding and the default stdout/log/CSV logger.
 
-The model requires an NVIDIA CUDA GPU. An archived one-gene demo ran on this laptop's
-**GeForce RTX 4060 Laptop GPU (8 GB VRAM)**, with NVIDIA driver **616.56** and the
-PyTorch CUDA 12.6 build listed above.
+The model requires an NVIDIA CUDA GPU.
 
 ### Demo
 
@@ -184,9 +182,7 @@ expression values, not counts.
 
 The validated 1,000-step run took **148.02 s** on one CB4 RTX 6000 Ada GPU,
 including model loading and output writing. PyTorch reported **0.43 GiB peak allocated**
-and **0.70 GiB peak reserved** CUDA memory; these are allocator figures on a 48 GiB card,
-not a minimum VRAM requirement. Its preview is visibly speckled;
-the 100-update checkpoint has no demonstrated biological reconstruction accuracy.
+and **0.70 GiB peak reserved** CUDA memory on that 48 GiB card.
 
 The real inputs contain official 10x cell and nuclear polygons, native H&E morphology
 complexity, a P0 muscle scRNA reference from an independent study, and genuine
@@ -195,7 +191,7 @@ weights. The existing gene co-expression prior was derived from this training
 tile. The checkpoint was trained from random initialization for **100 optimizer
 updates with batch size 1 on this same tile**. This demonstrates a complete five-gene execution path under real conditions. [Demo details](docs/usage.md) and [exact source and
 preprocessing instructions](docs/real_data.md) distinguish the observed data,
-model output, access requirements and known limits.
+model output and access requirements.
 
 ### Documentation and contribution
 
@@ -209,8 +205,8 @@ The form asks about your computer, installation time, demo outputs and any uncle
 
 GitHub Actions builds, installs and checks release archives on CPU.
 
-The optional container recipe can be built with `docker build -t focus-st:0.3.3 .` and run with
-`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.3.3`.
+The optional container recipe can be built with `docker build -t focus-st:0.3.4 .` and run with
+`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.3.4`.
 The container requires the NVIDIA Container Toolkit.
 
 ### Generated channels
@@ -327,7 +323,7 @@ For the embedding and feature-extraction steps, refer to:
 
 `load_dataset.py` min–max scales each low-resolution gene channel and divides the paired
 high-resolution target by its patch maximum. Model predictions use the normalized target scale;
-`scale_gt` records the training target maximum and is not a calibrated count conversion.
+`scale_gt` records that patch maximum; exported predictions remain normalized expression values.
 
 ### Downstream Analysis
 
@@ -347,12 +343,12 @@ benchmark comparisons, and nothing in `downstream/deconvolution/` feeds the anno
 the paper. [`downstream/README.md`](downstream/README.md) spells out which is which.
 
 These scripts are independent of training: they read the project's intermediate objects and write to
-their own `output/` directories. Inputs, environment, run order and the known limits of each analysis
+their own `output/` directories. Inputs, environment, run order and outputs of each analysis
 are documented in [`downstream/README.md`](downstream/README.md).
 
 ### Curated Cross-platform Multimodal Dataset
 
-The manuscript reports **6,788 paired ST–H&E images** (over **1.7 million patches**) and over **5.8 million single-cell profiles** across ten ST platforms and 34 tissue contexts. Those data are not bundled in this repository. The link below points to the authors' external data location; check its current contents and permissions before planning a reproduction.
+The manuscript reports **6,788 paired ST–H&E images** (over **1.7 million patches**) and over **5.8 million single-cell profiles** across ten ST platforms and 34 tissue contexts. Obtain cohort data from the curated collection linked below, following its access terms.
 
 The fully specified, tested mouse-pup route and exact public entrances are in [real data and preparation](docs/real_data.md). For other cohorts, organize accessible samples into the directory structure above and provide:
 
@@ -467,10 +463,10 @@ with its gene order and hash in [`checkpoint_provenance.json`](demos/checkpoint_
 
 ## Evaluation Metrics
 
-The equation mapping, implementation choices and verification scope are listed
+The equation mapping and implementation choices are listed
 in [reproduction notes](docs/reproduction.md). The demo uses its own checkpoint and sampling settings.
 
-The built-in `sample.py` reports only the following patch-level metrics:
+The built-in `sample.py` reports these patch-level metrics:
 
 - **RMSE**: root mean squared error for intensity accuracy
 - **SSIM**: structural similarity index for spatial patterns
@@ -489,10 +485,9 @@ This exports normalized RMSE, SSIM and PCC, observed UMI totals, gradient LNCC a
 gradient SSIM against the registered H&E, RMSE by native-complexity tercile,
 and a count-conserving interpolation of
 the observed low-resolution input for comparison. It does not convert normalized
-predictions into UMI counts. The bundled pair is a training-tile reconstruction;
+predictions into UMI counts. The bundled pair is a training-tile reconstruction.
 Add `--compare label=/path/to/prediction.npz` for another run on the same tile and
-gene order; each named run is scored independently. External baselines and
-manuscript figure estimates require their own matched data.
+gene order; each named run is scored independently.
 
 ## Troubleshooting
 

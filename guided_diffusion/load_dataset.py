@@ -299,7 +299,7 @@ class Data_all(Dataset):
                 'scgpt': base / 'spot_ST/extract' / layer_name / patch_id / 'scgpt_data' /
                     f'{self.gene_start+1}to{self.gene_start+self.gene_num}.npy',
             }
-            # Historical cellular tiles are rebuilt from the registered H&E at access time.
+            # Cellular H&E tiles are constructed from the registered image on access.
             missing = [str(v) for v in paths.values() if not v.is_file()]
             if missing:
                 if self.strict_features:

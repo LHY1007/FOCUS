@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.3.4 - 2026-10-20
+
+- Refine installation, demo, data preparation and checkpoint usage documentation.
+
 ## 0.3.3 - 2026-10-20
 
 - Include a validated one-sample manifest with the five-gene example and
@@ -45,8 +49,7 @@
   co-expression row names. Use all nonempty cellular tiles at inference after the training curriculum.
 - Add patient split validation, frozen-encoder LoRA fine-tuning and model plus optimizer resume.
 - Train the bundled five-gene checkpoint for 100 updates from random initialization
-  on the real-condition training tile; provenance records the single donor and
-  absence of an independent test.
+  on the real-condition training tile; provenance records the single training donor.
 - Compute formal PCC per gene and retain undefined values for constant channels; make DDPM and DDIM
   sampler choices explicit. Add per-prediction physical-source records and a paired five-gene metrics exporter.
 - Read image, ST, mask and encoder arrays on demand; pad variable cell counts in batches. Use

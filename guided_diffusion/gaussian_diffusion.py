@@ -2,7 +2,7 @@
 
 The manuscript configuration trains with the four terms in Methods 3.1 and
 Supplementary Table S9: Charbonnier, structural, disentangling and cell
-consistency. The historical loss branch remains available for old checkpoints.
+consistency. Alternate loss configurations remain available for checkpoint compatibility.
 """
 import sys
 

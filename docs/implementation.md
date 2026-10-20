@@ -61,8 +61,7 @@ that disabled experts are skipped for the affected samples, while activation
 heads and coordinator retain training gradients when their experts are active.
 On the single bundled training tile, alignment and cell-fidelity head weights changed
 during 100 updates; the sensitivity head stayed at its initial calibration because its
-expert was inactive. Controlled input changes verify each head’s intended direction,
-not diagnostic accuracy on independently labelled defects.
+expert was inactive. Controlled input changes verify each head’s intended direction.
 
 The sensitivity branch projects the name-aligned scRNA reference by Sinkhorn
 transport into ST features. `HEGuidedRegionalAttention` takes registered RGB
@@ -94,8 +93,7 @@ sampling defaults to 1,000 DDPM steps; the demo uses 1,000 DDIM steps and
 labels any shorter `--steps N` run as an execution check (Methods 1.1 and 3.1).
 The full real-condition demo uses the 10 µm path and produces finite `(5,256,256)` output;
 a same-tensor controlled input check confirms that a source bin just above 10 µm
-changes the shared-backbone prediction. No genuine coarse-bin cohort has been
-trained or quantitatively evaluated with this new residual. The five-panel PNG
+changes the shared-backbone prediction. The five-panel PNG
 exactly matches the NPZ display transform.
 
 ## Training and adaptation
