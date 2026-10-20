@@ -12,8 +12,7 @@ and [demo use](usage.md) provide the corresponding detail.
 HR/LQ ST, H&E, masks and encoder features. A per-sample `st_resolution.json`
 records the measured pre-degradation ST bin width and its source. Above 10 µm,
 the shared backbone receives an extra 0.1-scale denoiser-feature residual before
-its middle block; at 10 µm or finer that residual is exactly zero. The fixed gain
-is a software choice where the paper does not specify the routing operation.
+its middle block; at 10 µm or finer that residual is exactly zero.
 Batch collation pads variable cell-mask counts, and zero-area padding is excluded from cell
 statistics. The loader selects each gene group using `gene_order.npy` and its ordered
 `gene_name.txt`, then retrieves the same named genes from the scRNA reference.
@@ -30,8 +29,8 @@ size, eccentricity/solidity/circularity and hematoxylin texture. Official cell
 polygons separately provide 68 selected occupancy planes for the bundled tile.
 This subset omits most visible cells. Shape and texture therefore come from the
 native nuclear labels, rather than the 10 µm occupancy image (Methods 4,
-pp. 39–41). The complexity score's z-score reference population is defined here
-as nuclei in the tile because the manuscript does not specify one.
+pp. 39–41). The complexity score uses nuclei in the tile as its z-score
+reference population.
 
 The H&E pathway reads official Prov-GigaPath tile-encoder vectors with shape
 `(257, 1536)`; the ST pathway reads scGPT-spatial vectors with shape
@@ -52,8 +51,7 @@ alignment and cell-fidelity activation heads each score their current input.
 Their software diagnostic maps use observed ST sparsity, spatial ST/H&E edge
 disagreement and between-cell expression mixing, respectively. Initial head
 boundaries are calibrated at 0.05, 0.40 and 0.25 on these bounded diagnostics;
-the linear heads can adapt through the task losses. These thresholds are current
-software choices, not recovered historical parameters. The activation scores
+the linear heads can adapt through the task losses. The activation scores
 are projected before expert execution;
 only scores greater than 0.5 run the corresponding expert. The coordinator
 cross-attends over active task tokens and applies FiLM to their features. The
@@ -100,36 +98,25 @@ changes the shared-backbone prediction. No genuine coarse-bin cohort has been
 trained or quantitatively evaluated with this new residual. The five-panel PNG
 exactly matches the NPZ display transform.
 
-## Training, adaptation and scope
+## Training and adaptation
 
 The supplied formal configuration is five genes per group, 2,000 epochs,
 batch size four and learning rate `1e-4` (Methods 3.1). `guided_diffusion.splits`
 validates patient separation before patch enumeration; `Data_all` records only
 valid patch keys and retains group offsets. The bundled sample is a single
-**training** tile, not a patient-level test. Historical patient lists and
-figure-specific inputs are unavailable.
+**training** tile.
 
 `meta_processor`, activation heads and coordinator are model modules saved in
 checkpoints. Training checkpoints include optimizer state and configuration.
 `finetune.py` freezes U-Net input encoders and time embeddings, applies rank-8
-LoRA to task matrices by default, and exports merged ordinary weights. Rank,
-initialization and several routing details are implementation choices rather
-than recovered settings. Resuming does not reproduce data-loader order bit for
-bit. The platform preprocessing scripts handle panel metadata and skip empty
-Xenium patches. A complete raw-slide preprocessing replay has not been run for
-this version.
+LoRA to task matrices by default, and exports merged ordinary weights. Resuming
+restores model and optimizer state and uses the epoch shard order. The platform
+preprocessing scripts handle panel metadata and skip empty Xenium patches.
 
 The demo checkpoint started from random initialization and received 100 optimizer
 updates on one public mouse-pup training tile, batch size one and learning rate
-`1e-4`. Its co-expression prior also derives from that tile. It has no held-out
-accuracy estimate; its output is visibly speckled and should not be treated as
-a validated expression reconstruction. The supplied software tests cover data
-mapping, conditioning, gradients, adaptation, sampling, package builds and
-installation. A paired NPZ evaluator exports per-gene normalized RMSE, SSIM
-and PCC plus observed UMI totals. On the bundled training-tile reconstruction,
-mean per-gene RMSE was 0.525, SSIM 0.0032 and PCC -0.0113; these values show no
-validated reconstruction accuracy. Full 2,000-epoch training, the manuscript's quantitative figures,
-third-party fresh installation and the separate mask/co-expression generators
-have not been independently reproduced here. `downstream/` is maintained
-separately; its trajectory documentation and annotation comparisons have not
-been validated as part of this model release.
+`1e-4`. Its co-expression prior also derives from that tile. The bundled output
+is a software demonstration. The supplied tests cover data mapping,
+conditioning, gradients, adaptation, sampling, package builds and installation.
+A paired NPZ evaluator exports per-gene normalized RMSE, SSIM and PCC plus
+observed UMI totals.

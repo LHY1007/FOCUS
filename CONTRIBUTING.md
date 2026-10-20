@@ -30,6 +30,5 @@ validation of the default sampler requires the full 1,000-step run. Keep
 installation and imports.
 
 Optional local whitespace checks can be enabled with `sh install-hooks.sh`;
-this changes only the current checkout's Git hook path. The package is not
-published to PyPI and automatic publishing is not configured. Contributions
+this changes only the current checkout's Git hook path. Contributions
 are distributed under the MIT License.

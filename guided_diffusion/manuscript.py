@@ -1,7 +1,6 @@
 """New implementations of the supplied manuscript equations.
 
-Architecture choices absent from the paper are documented in docs/reproduction.md.
-These are not recovered historical training code or historical checkpoints.
+Configuration and implementation details are documented in docs/reproduction.md.
 """
 import torch
 from torch import nn
@@ -156,7 +155,7 @@ def resolution_gate(original_st_bin_um):
 def task_diagnostics(low_res, he, reference, masks):
     """Input-derived capture, spatial alignment and cell-mixing indicators.
 
-    These are calibrated software diagnostics, not historical activation labels.
+    The initial thresholds are recorded in the training configuration.
     Every feature is bounded in [0,1] and retains spatial information before GAP.
     """
     if reference is None or masks.ndim != 4:

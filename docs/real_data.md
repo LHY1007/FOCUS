@@ -27,6 +27,59 @@ Downloaded source SHA256 values for this run were `476b6d94c56bdabd5db010d5f54b7
 the Prov-GigaPath PyTorch weight SHA256 was
 `877947214318afa9e011754b74bbc3894a1f480a253afc7bc8045b8321dedd63`.
 
+### Preparing a tissue co-expression prior
+
+Supplementary Section 6 defines one Pearson gene–gene matrix per sample: flatten
+each 2D ST gene map over spatial bins, correlate gene pairs, then average the
+sample matrices within the tissue. Use the cohort's selected training samples
+and one consistent physical bin size. The example below uses the input count
+grids directly; keep any alternative transform in the dataset provenance.
+Each input pair is a sparse `HR_ST_256.npz` and a one-name-per-line text file
+in its **matrix column order**. The output paths must be new paths for this
+cohort; they are not the bundled demo's existing matrix.
+
+```bash
+python - /path/to/new_tissue \
+  /path/to/train_sample_1/HR_ST_256.npz /path/to/train_sample_1/genes.txt \
+  /path/to/train_sample_2/HR_ST_256.npz /path/to/train_sample_2/genes.txt <<'PY'
+from pathlib import Path
+import sys
+import numpy as np
+from scipy import sparse
+
+out = Path(sys.argv[1])
+inputs = sys.argv[2:]
+if not inputs or len(inputs) % 2:
+    raise ValueError('Provide at least one ST matrix and matching gene-name file')
+matrices = []
+reference_names = None
+for matrix_path, names_path in zip(inputs[::2], inputs[1::2]):
+    names = Path(names_path).read_text().splitlines()
+    if len(names) != len(set(names)):
+        raise ValueError(f'Duplicate gene names: {names_path}')
+    x = sparse.load_npz(matrix_path).toarray().astype(np.float64)
+    if x.shape[1] != len(names):
+        raise ValueError(f'Column/name count differs: {matrix_path}')
+    if reference_names is None:
+        reference_names = names
+    if set(names) != set(reference_names):
+        raise ValueError(f'Gene panel differs: {matrix_path}')
+    x = x[:, [names.index(gene) for gene in reference_names]]
+    if np.any(x.var(axis=0) == 0):
+        raise ValueError(f'Constant gene has undefined Pearson correlation: {matrix_path}')
+    matrices.append(np.corrcoef(x, rowvar=False))
+
+out.mkdir(parents=True, exist_ok=True)
+np.save(out / 'coexpression_matrix.npy', np.mean(matrices, axis=0).astype(np.float32))
+(out / 'coexpression_matrix.genes.txt').write_text(
+    '\n'.join(reference_names) + '\n', encoding='utf-8')
+PY
+```
+
+Place both output files at the tissue root of the formal loader tree. The
+loader selects current five-gene rows by these names and rejects mismatched
+matrix dimensions or duplicate names.
+
 ## Processed example and validation
 
 The pre-existing registered 10x tree was read at `Preview_379/processed`. Its tile `3_10`
@@ -72,8 +125,7 @@ it passed `Data_all` strict loading and manifest validation with
 The tested manifest
 has one `train` donor and no validation/test donor. Training used random initialization,
 one tile, batch 1, learning rate 1e-4 and 100 optimizer updates, with the paper's four
-loss weights. The run is a real-condition execution check, not the manuscript's
-2,000-epoch or seven-GPU experiment. Its model, optimizer and configuration
+loss weights. Its model, optimizer and configuration
 were retained outside Git; the compatible inference checkpoint is bundled in `demos/`.
 The saved configuration records the measured bin size and its physical derivation;
 resume checks both. The physical source record was copied from the already present
@@ -84,10 +136,9 @@ DDPM execution check. The bundled demo ran the full 1,000-step DDIM chain on the
 same real conditions in 148.02 s on one RTX 6000 Ada GPU (0.43 GiB peak CUDA
 allocated; 0.70 GiB peak reserved). Its prediction is visibly speckled, so neither
 run establishes biological accuracy.
-The paired evaluation command's count-conserving low-input interpolation has
-normalized RMSE 0.0827 on this training tile, versus 0.5129 for the bundled
-checkpoint. The demo checkpoint therefore does not outperform even this simple
-input baseline on its fitted tile.
+The paired evaluator accepts the observed counts and the five-channel normalized
+prediction as distinct inputs; its interpolation baseline preserves observed
+low-resolution totals.
 
 ## Preparing your own formal tree
 
@@ -127,8 +178,10 @@ input baseline on its fitted tile.
    For the bundled tile the value is 10.0 from 2,560 µm / 256 HR bins.
    `demos/prepare_observed.py` and
    `demos/assemble_real_data.py` show validated extraction and assembly for this tile.
-4. Supply **existing** native cell and nuclear instance labels, plus a compatible
-   prior from their maintainers. To turn existing **nuclear** labels into complexity, run
+4. Supply native cell and nuclear instance labels, plus a tissue co-expression
+   prior. For H&E segmentation use `data_preprocessing/histology/cell_mask.py`;
+   the bundled Xenium tile instead uses registered vendor boundaries. To turn
+   **nuclear** labels into complexity, run
    `python data_preprocessing/score_complexity.py --he /path/to/native_he.npy
    --labels /path/to/native_nucleus_labels.npy --label-kind nucleus --pixel-size-um 0.5
    --output /path/to/complexity_grid.npy`. For official Xenium polygons, first use
@@ -173,7 +226,5 @@ raw-replayed H&E and both ST grids also passed strict loading and a two-step
 DDPM run with the same checkpoint; it produced a finite 256×256×5 prediction.
 The previously exported H&E features and nuclear complexity were retained from
 the same registered sample; their source H&E crop differs from the new OpenCV
-crop by the small resampling amounts stated above. No full 1,000-step run was
-repeated on this replayed crop.
-Original manuscript
-patient lists, historical checkpoint and figure-specific data remain unavailable.
+crop by the small resampling amounts stated above. The 1,000-step demo uses
+the registered tile prepared with libvips.

@@ -17,9 +17,7 @@ Each clause maps to one call below:
     small artifacts removed   -> drop_small_objects()
     isotropically dilated,
       non-overlapping         -> expand_non_overlapping()
-    stitched back             -> the per-patch frame is the patch itself; the
-                                 stitched view is written by --stitch
-    visually inspected        -> render()
+    patch preview             -> render() when --draw is selected
 
 Output layout, per patch: ``cell_mask.npy`` of shape ``(256, 256, N)``, one
 binary channel per cell, on the same 10 um/px grid as ``5120_to256.npy``.
@@ -235,6 +233,11 @@ def render(channels: np.ndarray, rgb: np.ndarray, out_path: Path) -> None:
     import matplotlib
     matplotlib.use("Agg")
     import matplotlib.pyplot as plt
+    import cv2
+
+    if rgb.shape[:2] != channels.shape[:2]:
+        rgb = cv2.resize(rgb, (channels.shape[1], channels.shape[0]),
+                         interpolation=cv2.INTER_AREA)
 
     labels = np.argmax(channels, axis=2) + 1
     labels[channels.sum(axis=2) == 0] = 0

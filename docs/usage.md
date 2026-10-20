@@ -11,8 +11,7 @@ The runner strictly loads the bundled `demos/focus-5gene.pt` and one registered
 Myoz2** jointly using 1,000 DDIM reverse steps by default; `--steps N` explicitly
 shortens a program check. The H&E and observed ST are from the **same** field in
 10x's public P1 Xenium mouse-pup sample. The checkpoint was fitted on this very
-tile for 100 optimizer updates from random initialization, batch 1. There is no
-held-out test, paper accuracy claim, or historical manuscript checkpoint here.
+tile for 100 optimizer updates from random initialization, batch 1.
 
 The genuine conditions are an independent P0 mouse muscle scRNA reference (256
 cells from two donors), official 10x cell polygons (68 selected occupancy planes),

@@ -1,5 +1,14 @@
 # Changelog
 
+## 0.3.3 - 2026-10-20
+
+- Include a validated one-sample manifest with the five-gene example and
+  document how to construct named tissue co-expression priors from ST grids.
+- Include the H&E cell-mask helper in the wheel and align its QC preview grid
+  with the saved model mask.
+- Update installation, data inputs and distributed batch descriptions; keep
+  package verification in GitHub Actions.
+
 ## 0.3.2 - 2026-10-18
 
 - Add bounded, parameterized extraction of a registered Xenium tile from

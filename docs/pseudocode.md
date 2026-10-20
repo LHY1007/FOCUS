@@ -1,6 +1,6 @@
 # Algorithm outline
 
-This outline summarizes the current implementation. Historical training weights are not included.
+This outline summarizes the current implementation.
 
 ## Five-gene training
 

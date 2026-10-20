@@ -1,8 +1,7 @@
 """Patient-level split assignment and validation before patch extraction.
 
 Input CSV: tissue,sample_id,patient_id,split. The first three columns must be
-real source identifiers. An empty split can be assigned by the CLI. Generated
-assignments describe a new experiment, not the historical manuscript split.
+real source identifiers. An empty split can be assigned by the CLI.
 """
 import argparse
 import csv

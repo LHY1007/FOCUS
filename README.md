@@ -84,7 +84,7 @@ The equation mapping and explicit choices are listed in [reproduction.md](docs/r
 
 ### Environment Setup
 
-The source package is version **0.3.2**. With a supported Python environment and a CUDA-compatible
+The source package is version **0.3.3**. With a supported Python environment and a CUDA-compatible
 PyTorch installation, install core dependencies and the package from this checkout:
 
 ```bash
@@ -94,8 +94,7 @@ python -m pip install --no-deps .
 ```
 
 `requirements.txt` lists dependency version ranges. The versions used in our tests are listed below.
-The package has not been uploaded to PyPI. Build source and wheel archives with `python -m build`
-after installing the `dev` extra. The source archive contains the full scripts, docs and demo data;
+Build source and wheel archives with `python -m build` after installing the `dev` extra. The source archive contains the full scripts, docs and demo data;
 the wheel installs the core modules and the demo/config assets under `share/focus/`.
 
 For the preprocessing and downstream scripts, install the additional dependencies:
@@ -129,8 +128,8 @@ Preprocessing uses OpenCV for image operations, DuckDB and pyometiff for Xenium,
 SpatialData, spatialdata-io and pyvips for Visium HD. Downstream analysis uses rctd-py,
 Tangram, Shapely, OpenSlide, PyArrow, natsort, NetworkX and Scanpy's Leiden dependencies.
 Their version constraints are in the `preprocessing` and `downstream` extras in `setup.cfg`.
-The optional `segmentation` extra names StarDist/TensorFlow dependencies for separately maintained
-segmentation workflows; it does not implement mask generation in this package.
+The `segmentation` extra supplies StarDist and TensorFlow for
+[`data_preprocessing/histology/cell_mask.py`](data_preprocessing/histology/cell_mask.py).
 See [`data_preprocessing/README.md`](data_preprocessing/README.md#2-requirements).
 
 ### Tested system and hardware
@@ -194,9 +193,7 @@ complexity, a P0 muscle scRNA reference from an independent study, and genuine
 features extracted with official scGPT-spatial, Prov-GigaPath and frozen BioBERT
 weights. The existing gene co-expression prior was derived from this training
 tile. The checkpoint was trained from random initialization for **100 optimizer
-updates with batch size 1 on this same tile**. This demonstrates a complete
-five-gene path under real conditions; it is not an independent test or recovered
-manuscript checkpoint. [Demo details](docs/usage.md) and [exact source and
+updates with batch size 1 on this same tile**. This demonstrates a complete five-gene execution path under real conditions. [Demo details](docs/usage.md) and [exact source and
 preprocessing instructions](docs/real_data.md) distinguish the observed data,
 model output, access requirements and known limits.
 
@@ -210,11 +207,10 @@ If you are trying FOCUS for the first time, follow the installation and demo ins
 and share your results through the [first-run feedback form](https://github.com/LHY1007/FOCUS/issues/new?template=first-run.yml).
 The form asks about your computer, installation time, demo outputs and any unclear instructions.
 
-GitHub Actions builds and checks the package on CPU. `.travis.yml`, `.pypirc` and `netlify.toml`
-are optional configuration files for Travis CI, PyPI and Netlify; these services are not enabled.
+GitHub Actions builds, installs and checks release archives on CPU.
 
-The optional container recipe can be built with `docker build -t focus-st:0.3.2 .` and run with
-`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.3.2`.
+The optional container recipe can be built with `docker build -t focus-st:0.3.3 .` and run with
+`docker run --rm --gpus all -v "$PWD/demos/output:/opt/FOCUS/demos/output" focus-st:0.3.3`.
 The container requires the NVIDIA Container Toolkit.
 
 ### Generated channels
@@ -263,7 +259,6 @@ data_root/
 | `HR_ST_256.npz` | sparse `(65536, G)` | High-resolution ST on a 256×256 grid at 10 µm/bin |
 | `spot_ST.npz` | sparse `(676, G)` | Low-resolution ST on a 26×26 grid at 100 µm/bin |
 | `5120_to256.npy` | `(256, 256, 3)` uint8 | Registered H&E at 10 µm/px, downsampled from the native 0.5 µm/px tile |
-| `320_to16.npy` | `(256, 16, 16, 3)` uint8 | Historical preprocessing output; the full loader rebuilds the cellular grid in row-major order from the registered H&E image |
 | `cell_mask.npy` | `(256, 256, M)` | Cell segmentation masks |
 | `complexity_grid.npy` | `(16, 16)` float32 | Density and native H&E nuclear shape, size and texture score from existing nuclear-instance labels |
 | `pre_he.npy` | `(257, 1536)` | Authentic Prov-GigaPath vectors: tissue tile followed by 256 row-major cellular tiles |
@@ -284,6 +279,7 @@ a missing or duplicate name raises an error. Groups use `1to5.npy`, `6to10.npy`,
 The loader also selects the current gene rows from the supplied co-expression matrix by name;
 it never assumes that the first 50 matrix rows describe every gene group. Prepare the `.genes.txt`
 sidecar from the exact gene order used to build that matrix; do not reorder matrix values.
+For a new cohort, [prepare a tissue prior from ST sample matrices](docs/real_data.md#preparing-a-tissue-co-expression-prior).
 Score `complexity_grid.npy` from the registered native H&E and existing nuclear labels using
 [`data_preprocessing/score_complexity.py`](data_preprocessing/score_complexity.py). The downsampled
 `cell_mask.npy` is insufficient for native subcellular shape and texture measurement.
@@ -293,7 +289,8 @@ more than one.
 
 ### Preprocessing Code
 
-Platform-specific H&E/ST preprocessing lives in [`data_preprocessing/`](data_preprocessing/); existing masks, co-expression priors and pretrained features are supplied through separate steps.
+Platform-specific H&E/ST preprocessing lives in [`data_preprocessing/`](data_preprocessing/).
+H&E masks, co-expression priors and pretrained features use the steps linked below.
 It covers three of the ten evaluated platforms:
 
 | Platform | Script | Produces |
@@ -316,7 +313,7 @@ Additional inputs have separate generators or export helpers:
 
 | File | Produced by |
 | --- | --- |
-| `cell_mask.npy` | Existing cell instances registered to the patch; the public Xenium example uses official cell boundaries |
+| `cell_mask.npy` | [`histology/cell_mask.py`](data_preprocessing/histology/cell_mask.py) segments H&E with StarDist; the bundled Xenium example uses registered 10x cell boundaries |
 | `pre_he.npy` | Official [Prov-GigaPath](https://huggingface.co/prov-gigapath/prov-gigapath) H&E features exported by `data_preprocessing/export_conditioning.py` after gated access |
 | `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings exported by `data_preprocessing/export_conditioning.py` with verified checkpoint loading |
 | `coexpression_matrix.npy` | spatial gene–gene co-expression computed across the cohort |
@@ -328,9 +325,9 @@ For the embedding and feature-extraction steps, refer to:
 - [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) — gene expression embeddings
 - [Prov-GigaPath](https://github.com/prov-gigapath/prov-gigapath) — H&E feature extraction
 
-Expression values are log-normalized with gene-wise scaling before training; `load_dataset.py` applies
-min–max normalization to `spot_ST` and divides `HR_ST` by its per-patch maximum, keeping that maximum as
-`patch_scale` so predictions can be mapped back to counts.
+`load_dataset.py` min–max scales each low-resolution gene channel and divides the paired
+high-resolution target by its patch maximum. Model predictions use the normalized target scale;
+`scale_gt` records the training target maximum and is not a calibrated count conversion.
 
 ### Downstream Analysis
 
@@ -419,9 +416,8 @@ python -m guided_diffusion.splits data/samples.csv
 python train.py --data_root data/prepared --split_manifest data/samples.csv --split train
 ```
 
-The loader selects only the requested samples. A missing manifest entry or patient crossing splits is
-an error. These commands create a new experiment's split; the original manuscript patient lists have
-not been recovered. Use the original lists when repeating that experiment.
+The loader selects only the requested samples. A missing manifest entry or patient crossing splits
+is an error. The bundled one-donor `train` manifest is [`demos/samples.csv`](demos/samples.csv).
 
 Each epoch visits the complete selected training set, including its final partial batch.
 Each five-gene group receives the corresponding gene offset and writes its actual `config.yaml`
@@ -432,8 +428,8 @@ the sampler repeats a few patches when their number is not divisible by the work
 count. Each rank writes a loss log, while rank zero writes model and optimizer
 checkpoints.
 `batch_size` is per rank, so the effective global batch is `N * batch_size`.
-For one GPU, use `python train.py` as above. The reported seven-V100 manuscript run
-and its global batch interpretation were not reconstructed.
+For one GPU, use `python train.py` as above. `batch_size` is per rank; the nominal
+global batch is `world_size × batch_size`, with a smaller final batch possible.
 
 ### Fine-tuning
 
@@ -443,8 +439,8 @@ python train.py --config config/config_finetune.yaml --init_checkpoint models/fo
 
 The U-Net encoders and time embedding are frozen. Decoder and conditional matching/fusion layers
 remain trainable. Task-module weight matrices receive low-rank updates while their base weights stay
-frozen. Rank 8 and zero-initialized updates are implementation defaults; the manuscript does not specify
-the rank. Adapted checkpoints can resume with `--resume_checkpoint` pointing to
+frozen. The default LoRA rank is 8 and the low-rank update starts at zero; set `lora_rank`
+in the training config to change its capacity. Adapted checkpoints can resume with `--resume_checkpoint` pointing to
 `modelNNNNNN.pt` in its `Gstart-end_*` run directory, together with `optNNNNNN.pt`;
 the loop loads both states and continues up to the configured total epoch count.
 `merged.pt` exports ordinary
@@ -465,10 +461,9 @@ on normalized predictions without applying a separate per-image min/max transfor
 
 ### Pre-trained Models
 
-The five-gene software-demo checkpoint is bundled in `demos/` and uses the matching input conditions
-described in [usage.md](docs/usage.md). Historical checkpoints are available from
-[Dropbox](https://www.dropbox.com/scl/fo/gte7fbz2y14syitka3mb0/AOhsVHx4Rdlk9BU2oJRySv4?rlkey=aytpdtg1ae05jf8i139a2e15c&st=5qi9943t&dl=0).
-Check their architecture and gene order before use; they are not relabeled as weights for the new implementation.
+The five-gene demo checkpoint is bundled as [`demos/focus-5gene.pt`](demos/focus-5gene.pt)
+with its gene order and hash in [`checkpoint_provenance.json`](demos/checkpoint_provenance.json).
+`demos/run.py` checks this identity before strict loading.
 
 ## Evaluation Metrics
 
@@ -519,9 +514,9 @@ manuscript figure estimates require their own matched data.
      for another configuration; data and output paths are relative to the working directory.
 
 4. **No patches loaded**
-   - The dataset requires **all** of `HR_ST_256.npz`, `spot_ST.npz`, `5120_to256.npy`, `320_to16.npy`
-     and `cell_mask.npy` for a patch; a patch missing any of them is skipped with a warning
-   - Supply `pre_he.npy` and `scgpt_data/` as well: the current model requires numeric tensors for both.
+   - Strict loading requires `HR_ST_256.npz`, `spot_ST.npz`, `5120_to256.npy`,
+     `cell_mask.npy`, `complexity_grid.npy`, `pre_he.npy` and the current five-gene
+     `scgpt_data/` file plus its gene-name sidecar. Missing inputs raise an error.
      The bundled demo supplies its precomputed conditions; see [input definitions](docs/usage.md).
    - Tiles rejected by the H&E pass can still have ST grids written for them (see
      [`data_preprocessing/README.md`](data_preprocessing/README.md#55-run-order)); those tiles have no

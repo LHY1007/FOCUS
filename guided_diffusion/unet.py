@@ -591,7 +591,7 @@ class UNetModel(nn.Module):
             num_heads_upsample = num_heads
 
         if not manuscript_mode:
-            raise ValueError("Use the original repository revision for historical model checkpoints")
+            raise ValueError("This model requires manuscript_mode=true and a compatible checkpoint")
         self.manuscript_mode = True
         self.gene_num = gene_num #基因数量，用于定义输入和输出通道数。
         # self.in_channels = in_channels

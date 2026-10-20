@@ -1,8 +1,7 @@
 """Project 10x Xenium's existing cell or nucleus polygons onto an H&E tile.
 
-This reads official vendor boundaries. It performs no image segmentation
-and does not write FOCUS's cell_mask.npy, whose generator is maintained
-separately.
+This reads official vendor boundaries without image segmentation. For H&E
+segmentation, use ``data_preprocessing/histology/cell_mask.py``.
 """
 import argparse
 import hashlib

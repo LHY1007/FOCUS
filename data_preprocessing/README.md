@@ -3,7 +3,8 @@
 This folder contains the code that converts raw **10x Visium**, **10x Visium HD** and **10x Xenium**
 output into the per-patch layout that FOCUS trains and evaluates on. It covers the
 **H&E tiling** and the **transcript-to-grid binning** steps; the embedding, segmentation and
-co-expression steps that also feed the model are listed at the [end of this document](#7-what-is-not-covered-here).
+co-expression inputs that also feed the model are listed under
+[additional model inputs](#7-additional-model-inputs).
 
 ```
 data_preprocessing/
@@ -34,34 +35,22 @@ data_preprocessing/
 
 ### Cell segmentation
 
-`cell_mask.npy` is produced by [`histology/cell_mask.py`](histology/cell_mask.py), which follows the
-segmentation description in the supplementary method section clause by clause:
-
-| Method section | Code |
-| --- | --- |
-| 0.5 um/pixel H&E patches | the `5120.npy` the tiling steps already write |
-| pretrained StarDist2D | `StarDist2D.from_pretrained("2D_versatile_he")` |
-| **default thresholds** | `PROB_THRESH = NMS_THRESH = None` |
-| small artifacts removed | `drop_small_objects()` |
-| **isotropically dilated, non-overlapping** | `expand_non_overlapping()`, nearest-nucleus assignment |
-| stitched back, visually inspected | `--draw` writes `cell_mask.png` per patch |
-
-The expansion is worth one sentence, because it is the property the model depends on. Every
-background pixel within reach of a nucleus is assigned to the **nearest** nucleus, so no pixel can be
-claimed by two cells and the per-cell channels are disjoint by construction. A plain morphological
-dilation does not guarantee that: two expanding labels can write the same pixel and the last writer
-silently wins, which would make the per-cell mean that `CellFidelityConstraining` computes arbitrary.
+[`histology/cell_mask.py`](histology/cell_mask.py) reads a registered native
+`5120.npy` H&E tile at 0.5 µm/pixel. It uses the pretrained StarDist2D
+`2D_versatile_he` model at its saved default probability and NMS thresholds,
+filters small nuclear objects, and expands labels by assigning each reachable
+background pixel to its nearest nucleus. The resulting 10 µm occupancy channels
+are stored as `cell_mask.npy` with shape `(256,256,M)`; `--draw` writes a preview
+at the same grid size. The default minimum nuclear area is 100 native pixels
+and expansion distance is 5 µm; both are command-line parameters.
 
 ```bash
-pip install .[segmentation]     # stardist + tensorflow, the only extra this needs
-cd data_preprocessing/histology
-python cell_mask.py --root <WSI/extract/{layer}> --all --draw
+python -m pip install '.[segmentation]'
+python data_preprocessing/histology/cell_mask.py --root /path/to/WSI/extract/layer --all --draw
 ```
 
-[`../downstream/matrix/bin2cell_pipeline.py`](../downstream/matrix/bin2cell_pipeline.py) runs the
-published **bin2cell** recipe instead, and differs in exactly one respect: its detector thresholds
-are 0.01 rather than the model defaults, and its expansion operates on the 2 um bin grid rather than
-on pixels. Both are kept; `cell_mask.py` is the one to use to reproduce the method section.
+The bundled Xenium example uses registered 10x cell boundaries. The separate
+`downstream/matrix/bin2cell_pipeline.py` uses bin2cell segmentation settings.
 
 ---
 
@@ -701,21 +690,21 @@ patch extraction so overlapping fields cannot cross train/test boundaries.
 
 ---
 
-## 7. What is not covered here
+## 7. Additional model inputs
 
-These files also appear in the FOCUS data layout. The table identifies the actual
-helper or protected upstream owner; a complete public mouse-pup example and exact
+These files also appear in the FOCUS data layout. The table identifies their
+source; a complete public mouse-pup example and exact
 source entrances are in [real data preparation](../docs/real_data.md).
 
 | File | Produced by |
 | --- | --- |
-| `cell_mask.npy` | Existing registered cell instances. For the public demo, `read_xenium_boundaries.py` reads vendor polygons and `../demos/select_official_cells.py` packs selected official IDs; neither performs segmentation. |
+| `cell_mask.npy` | `histology/cell_mask.py` segments H&E with StarDist; the bundled demo instead uses registered 10x polygons packed by `../demos/select_official_cells.py`. |
 | `st_resolution.json` | Per-sample measured pre-degradation ST bin width (`original_st_bin_um`) and a physical `source` description. The model uses this value to determine whether the original ST scale exceeds 10 µm; tensor size is not a substitute. |
 | `pre_he.npy` | Official [Prov-GigaPath](https://huggingface.co/prov-gigapath/prov-gigapath) tile features, 257 vectors of 1536 dimensions; export with `export_conditioning.py` after accepting the model access terms. |
 | `complexity_grid.npy` | Density and native nuclear size, shape and hematoxylin texture scored from registered H&E plus existing nuclear-instance labels with `score_complexity.py`; this does not generate masks. The scorer writes a source-hash `.json` sidecar. |
 | `scgpt_data/` | Official [scGPT-spatial](https://github.com/bowang-lab/scGPT-spatial) embeddings per five-gene group from `export_conditioning.py`; see the pinned non-Flash export and ortholog mapping in `real_data.md`. |
 | `sc/{scRNA_data}.h5ad` | Independent tissue/stage matched raw-count reference; `extract_mouse_pup_reference.py` selects the public P0 muscle subset for the demo. |
-| `coexpression_matrix.npy` | Spatial gene-gene prior from its separately maintained generator, with exact row-name sidecar. The demo uses an existing same-tile matrix, not an independent cohort estimate. |
+| `coexpression_matrix.npy` | Tissue spatial gene-gene prior with exact row-name sidecar. See the [sample-level Pearson and tissue-mean example](../docs/real_data.md#preparing-a-tissue-co-expression-prior). The bundled demo uses its existing same-tile matrix. |
 | `gene_order.npy`, `gene_name.txt` | the gene indices/names the model is trained on, derived from `gene_groups.csv` |
 
 Cell-type annotation, deconvolution and trajectory inference are also outside this folder and are
